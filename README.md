@@ -1,1 +1,0 @@
-# Mental-asylum-and-Rehabilitation-center-CSGO
