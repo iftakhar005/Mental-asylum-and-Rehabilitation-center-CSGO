@@ -100,9 +100,9 @@ class MentalHealthSecurityManager {
         return $types;
     }
     
-    /**
-     * 2. INPUT LENGTH RESTRICTIONS AND SANITIZATION
-     */
+   
+
+
     public function validateInput($input, $rules = []) {
         $defaults = [
             'max_length' => 255,
@@ -114,7 +114,7 @@ class MentalHealthSecurityManager {
         
         $rules = array_merge($defaults, $rules);
         
-        // Handle null/empty input
+        
         if ($input === null || $input === '') {
             if ($rules['required']) {
                 throw new Exception("Input is required but was empty");
@@ -124,7 +124,7 @@ class MentalHealthSecurityManager {
         
         $input = trim($input);
         
-        // Length validation
+    
         if (strlen($input) > $rules['max_length']) {
             throw new Exception("Input exceeds maximum length of {$rules['max_length']} characters");
         }
@@ -133,7 +133,7 @@ class MentalHealthSecurityManager {
             throw new Exception("Input is below minimum length of {$rules['min_length']} characters");
         }
         
-        // Type-specific validation
+   
         switch ($rules['type']) {
             case 'email':
                 if (!$this->validateEmail($input)) {
@@ -183,7 +183,7 @@ class MentalHealthSecurityManager {
     
     private function validatePhone($phone) {
         $cleaned = preg_replace('/[\s\-\(\)+]/', '', $phone);
-        return preg_match('/^[0-9]{10,15}$/', $cleaned);
+        return preg_match('/^[0-9]{11,11}$/', $cleaned);
     }
     
     private function validateDate($date) {
@@ -192,15 +192,15 @@ class MentalHealthSecurityManager {
     }
     
     private function sanitizeInput($input, $allow_html = false) {
-        // Remove null bytes
-        $input = str_replace("\0", '', $input);
-        
+
+        $input = str_replace("\0", '', $input);//can be used in directory traversal attack or file inclusion attack
+
         if (!$allow_html) {
-            // Remove HTML tags
+         
             $input = strip_tags($input);
         }
         
-        // Remove dangerous JavaScript patterns
+   
         $dangerous_patterns = [
             'javascript:',
             'vbscript:',
@@ -223,9 +223,7 @@ class MentalHealthSecurityManager {
         return $input;
     }
     
-    /**
-     * 3. SQL INJECTION PATTERN BLOCKING
-     */
+
     public function detectSQLInjection($input) {
         $input = strtolower($input);
         
@@ -240,6 +238,10 @@ class MentalHealthSecurityManager {
             '/\'\s*(or|and)\s*1\s*=\s*0/i',
             '/\'\s*(or|and)\s*true/i',
             '/\'\s*(or|and)\s*false/i',
+            '/\'\s*(or|and)\s*\'\d+\'\s*=\s*\'\d+\'/i',  // Catches '1'='1', '2'='2', etc.
+            '/(or|and)\s*\'\d+\'\s*=\s*\'\d+\'/i',      // Catches OR '1'='1' without leading quote
+            '/ or \'[0-9]+\'=\'[0-9]+/i',                // Catches admin' OR '1'='1 pattern
+            '/ and \'[0-9]+\'=\'[0-9]+/i',               // Catches admin' AND '1'='1 pattern
             
             // Time-based blind injection
             '/sleep\s*\(/i',
@@ -310,7 +312,7 @@ class MentalHealthSecurityManager {
             return false;
         }
         
-        // Check for SQL injection patterns
+      
         if ($this->detectSQLInjection($query)) {
             return false;
         }
@@ -318,15 +320,13 @@ class MentalHealthSecurityManager {
         return true;
     }
     
-    /**
-     * 4. CAPTCHA SYSTEM FOR FAILED LOGIN ATTEMPTS
-     */
+    
     public function recordFailedLogin($identifier = null) {
         if ($identifier === null) {
             $identifier = $this->getClientIdentifier();
         }
         
-        // Check if client is already banned
+       
         if ($this->isClientBanned($identifier)) {
             $this->logSecurityEvent('FAILED_LOGIN_BANNED', ['identifier' => $identifier]);
             return;
@@ -337,8 +337,7 @@ class MentalHealthSecurityManager {
         if (!isset($this->failed_attempts[$identifier])) {
             $this->failed_attempts[$identifier] = [];
         }
-        
-        // Clean old attempts
+       
         $this->failed_attempts[$identifier] = array_filter(
             $this->failed_attempts[$identifier],
             function($timestamp) use ($current_time) {
@@ -346,11 +345,11 @@ class MentalHealthSecurityManager {
             }
         );
         
-        // Add new failed attempt
+       
         $this->failed_attempts[$identifier][] = $current_time;
         $_SESSION['security_failed_attempts'] = $this->failed_attempts;
         
-        // Check if client should be banned (10+ attempts)
+    
         if (count($this->failed_attempts[$identifier]) >= $this->max_ban_attempts) {
             $this->banClient($identifier);
             $this->logSecurityEvent('CLIENT_BANNED', ['identifier' => $identifier, 'attempts' => count($this->failed_attempts[$identifier])]);
@@ -371,9 +370,7 @@ class MentalHealthSecurityManager {
         return count($this->failed_attempts[$identifier]) >= $this->max_login_attempts;
     }
     
-    /**
-     * BAN SYSTEM - 5 minute ban after 10 attempts
-     */
+
     public function isClientBanned($identifier = null) {
         if ($identifier === null) {
             $identifier = $this->getClientIdentifier();
@@ -386,7 +383,7 @@ class MentalHealthSecurityManager {
         $ban_time = $this->banned_clients[$identifier];
         $current_time = time();
         
-        // Check if ban has expired
+       
         if (($current_time - $ban_time) >= $this->ban_duration) {
             $this->unbanClient($identifier);
             return false;
@@ -403,7 +400,7 @@ class MentalHealthSecurityManager {
         $this->banned_clients[$identifier] = time();
         $_SESSION['security_banned_clients'] = $this->banned_clients;
         
-        // Clear failed attempts after banning
+       
         if (isset($this->failed_attempts[$identifier])) {
             unset($this->failed_attempts[$identifier]);
             $_SESSION['security_failed_attempts'] = $this->failed_attempts;
@@ -465,7 +462,7 @@ class MentalHealthSecurityManager {
                 $answer = $num1 + $num2;
                 break;
             case '-':
-                // Ensure positive result
+             
                 if ($num1 < $num2) {
                     list($num1, $num2) = [$num2, $num1];
                 }
@@ -491,7 +488,7 @@ class MentalHealthSecurityManager {
             return false;
         }
         
-        // Check if captcha has expired (5 minutes)
+       
         if (time() - $_SESSION['captcha_time'] > 300) {
             unset($_SESSION['captcha_answer'], $_SESSION['captcha_time'], $_SESSION['captcha_question']);
             return false;
@@ -564,7 +561,7 @@ class MentalHealthSecurityManager {
     
     private function escapeHTMLAttribute($input) {
         $safe = $this->escapeHTML($input);
-        // Additional escaping for attributes
+        
         $safe = str_replace(["\n", "\r", "\t"], ['&#10;', '&#13;', '&#9;'], $safe);
         return $safe;
     }
@@ -589,7 +586,7 @@ class MentalHealthSecurityManager {
     }
     
     private function escapeCSS($input) {
-        // Remove any characters that could break CSS
+        
         return preg_replace('/[^a-zA-Z0-9\-_]/', '', $input);
     }
     
@@ -597,9 +594,7 @@ class MentalHealthSecurityManager {
         return rawurlencode($input);
     }
     
-    /**
-     * Batch process form data with validation rules
-     */
+    
     public function processFormData($data, $rules = []) {
         $processed = [];
         $errors = [];
@@ -624,9 +619,7 @@ class MentalHealthSecurityManager {
         return $processed;
     }
     
-    /**
-     * Security logging
-     */
+ 
     public function logSecurityEvent($event_type, $details = []) {
         $log_entry = [
             'timestamp' => date('Y-m-d H:i:s'),
@@ -640,7 +633,7 @@ class MentalHealthSecurityManager {
         
         $log_file = __DIR__ . '/logs/security.log';
         
-        // Create logs directory if it doesn't exist
+       
         $log_dir = dirname($log_file);
         if (!is_dir($log_dir)) {
             mkdir($log_dir, 0755, true);
@@ -649,9 +642,7 @@ class MentalHealthSecurityManager {
         file_put_contents($log_file, json_encode($log_entry) . "\n", FILE_APPEND | LOCK_EX);
     }
     
-    /**
-     * Generate secure random token
-     */
+ 
     public function generateSecureToken($length = 32) {
         return bin2hex(random_bytes($length / 2));
     }
@@ -667,17 +658,13 @@ class MentalHealthSecurityManager {
         return hash_equals($_SESSION['csrf_token'], $token);
     }
     
-    /**
-     * Generate CSRF token
-     */
+    
     public function generateCSRFToken() {
         $_SESSION['csrf_token'] = $this->generateSecureToken();
         return $_SESSION['csrf_token'];
     }
     
-    /**
-     * PUBLIC TESTING METHODS FOR DEMONSTRATION
-     */
+  
     public function testQuerySafety($query) {
         return $this->isQuerySafe($query);
     }
@@ -687,7 +674,7 @@ class MentalHealthSecurityManager {
     }
 }
 
-// Initialize global security manager instance
+
 if (isset($conn)) {
     $securityManager = new MentalHealthSecurityManager($conn);
 }
