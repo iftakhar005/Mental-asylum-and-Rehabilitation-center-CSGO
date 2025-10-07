@@ -75,14 +75,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $gender = $conn->real_escape_string($_POST['gender']);
     $address = $conn->real_escape_string($_POST['address']);
     $phone = $conn->real_escape_string($_POST['phone']);
+    $email = $conn->real_escape_string($_POST['email']); // Use provided email instead of generating
     $experience = $conn->real_escape_string($_POST['experience']);
+    
     // Split full name into first and last name
     $nameParts = explode(' ', $full_name);
     $firstName = $nameParts[0];
     $lastName = end($nameParts);
+    
     // Generate credentials
     $staff_id = 'REC-' . date('Ymd') . '-' . rand(1000, 9999);
-    $email = generateEmail($firstName, $lastName, 'receptionist');
+    // $email = generateEmail($firstName, $lastName, 'receptionist'); // Removed auto-generation
     $temp_password = generateSecurePassword(12);
     $hashed_password = password_hash($temp_password, PASSWORD_DEFAULT);
     $success = false;
@@ -335,6 +338,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div class="form-group">
                     <label class="form-label" for="phone">Phone Number</label>
                     <input type="tel" class="form-control" id="phone" name="phone" required>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="email">Email Address</label>
+                    <input type="email" class="form-control" id="email" name="email" placeholder="Enter email address" required>
                 </div>
 
                 <div class="form-group">

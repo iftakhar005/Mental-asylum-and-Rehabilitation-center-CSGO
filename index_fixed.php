@@ -1,18 +1,18 @@
 <?php
 session_start();
 
-
+// Initialize variables
 $login_error = '';
 $show_captcha = false;
 $captcha_question = '';
 $securityManager = null;
 
-
+// Include database and security manager with error handling
 try {
     include 'db.php';
     include 'security_manager.php';
     
-   
+    // Initialize security manager if database connection is successful
     if (isset($conn) && $conn instanceof mysqli) {
         $securityManager = new MentalHealthSecurityManager($conn);
     }
@@ -21,81 +21,61 @@ try {
     error_log('System Error: ' . $e->getMessage());
 }
 
-
+// Check if CAPTCHA is needed (only if security manager is available)
 if ($securityManager && is_object($securityManager)) {
     $show_captcha = $securityManager->needsCaptcha();
     if ($show_captcha) {
-
-        if (!isset($_SESSION['captcha_answer']) || !isset($_SESSION['captcha_time'])) {
-            $captcha_data = $securityManager->generateCaptcha();
-            $captcha_question = $captcha_data['question'];
-        } else {
-       
-            if (!isset($_SESSION['captcha_question'])) {
-             
-                $captcha_data = $securityManager->generateCaptcha();
-                $captcha_question = $captcha_data['question'];
-            } else {
-                $captcha_question = $_SESSION['captcha_question'];
-            }
-        }
+        $captcha_data = $securityManager->generateCaptcha();
+        $captcha_question = $captcha_data['question'];
     }
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-   
+    // Only process login if security manager is available
     if (!$securityManager) {
         $login_error = 'Security system not available. Please contact administrator.';
     } else {
         try {
+            // Validate and sanitize inputs using security manager
+            $email = $securityManager->validateInput($_POST['email'] ?? '', [
+                'type' => 'email',
+                'max_length' => 255,
+                'required' => true
+            ]);
+            
+            $password = $securityManager->validateInput($_POST['password'] ?? '', [
+                'type' => 'string',
+                'max_length' => 255,
+                'required' => true,
+                'allow_html' => false
+            ]);
+            
+            $remember = isset($_POST['remember']);
 
-            if ($securityManager->isClientBanned()) {
-                $ban_time_remaining = $securityManager->getBanTimeRemaining();
-                $minutes = ceil($ban_time_remaining / 60);
-                $login_error = "Account temporarily banned due to too many failed attempts. Please try again in {$minutes} minute(s).";
-                $securityManager->logSecurityEvent('LOGIN_ATTEMPT_WHILE_BANNED');
+            // Check for SQL injection attempts
+            if ($securityManager->detectSQLInjection($email) || $securityManager->detectSQLInjection($password)) {
+                $securityManager->logSecurityEvent('SQL_INJECTION_ATTEMPT', ['email' => $email]);
+                $login_error = 'Invalid login attempt detected.';
+                $securityManager->recordFailedLogin();
             } else {
-              
-                $email = $securityManager->validateInput($_POST['email'] ?? '', [
-                    'type' => 'email',
-                    'max_length' => 255,
-                    'required' => true
-                ]);
-                
-                $password = $securityManager->validateInput($_POST['password'] ?? '', [
-                    'type' => 'string',
-                    'max_length' => 255,
-                    'required' => true,
-                    'allow_html' => false
-                ]);
-                
-                $remember = isset($_POST['remember']);
-
-                
-                if ($securityManager->detectSQLInjection($email) || $securityManager->detectSQLInjection($password)) {
-                    $securityManager->logSecurityEvent('SQL_INJECTION_ATTEMPT', ['email' => $email]);
-                    $login_error = 'Invalid login attempt detected.';
-                    $securityManager->recordFailedLogin();
-                } else {
-                    
-                    if ($show_captcha) {
-                        $captcha_answer = $_POST['captcha_answer'] ?? '';
-                        if (!$securityManager->validateCaptcha($captcha_answer)) {
-                            $login_error = 'Invalid CAPTCHA answer. Please try again.';
-                            $securityManager->recordFailedLogin();
-                        } else {
-                           
-                            $login_success = processLogin($email, $password, $remember);
-                            if (!$login_success) {
-                                $securityManager->recordFailedLogin();
-                            }
-                        }
+                // Validate CAPTCHA if required
+                if ($show_captcha) {
+                    $captcha_answer = $_POST['captcha_answer'] ?? '';
+                    if (!$securityManager->validateCaptcha($captcha_answer)) {
+                        $login_error = 'Invalid CAPTCHA answer. Please try again.';
+                        $securityManager->recordFailedLogin();
                     } else {
-                       
+                        // CAPTCHA passed, proceed with login
                         $login_success = processLogin($email, $password, $remember);
                         if (!$login_success) {
                             $securityManager->recordFailedLogin();
                         }
+                    }
+                } else {
+                    // No CAPTCHA required, proceed with login
+                    $login_success = processLogin($email, $password, $remember);
+                    if (!$login_success) {
+                        $securityManager->recordFailedLogin();
                     }
                 }
             }
@@ -109,12 +89,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-
+// Function to handle login process
 function processLogin($email, $password, $remember) {
     global $securityManager, $conn, $login_error;
     
     try {
-    
+        // Use secure query for staff table check
         $result = $securityManager->secureSelect(
             "SELECT staff_id, full_name, password_hash, role FROM staff WHERE email = ?",
             [$email],

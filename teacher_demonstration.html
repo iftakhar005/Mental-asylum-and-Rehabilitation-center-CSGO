@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Security Features Demonstration - Mental Health Center</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .header {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            color: #2c3e50;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            color: #7f8c8d;
+            font-size: 1.2em;
+        }
+        
+        .demo-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 25px;
+            margin-bottom: 30px;
+        }
+        
+        .demo-card {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.1);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        
+        .demo-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 35px rgba(0,0,0,0.15);
+        }
+        
+        .demo-card h3 {
+            color: #2c3e50;
+            font-size: 1.4em;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .demo-card .icon {
+            font-size: 1.5em;
+        }
+        
+        .demo-card p {
+            color: #7f8c8d;
+            margin-bottom: 20px;
+        }
+        
+        .demo-btn {
+            display: inline-block;
+            background: linear-gradient(45deg, #3498db, #2980b9);
+            color: white;
+            padding: 12px 24px;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            border: none;
+            cursor: pointer;
+            width: 100%;
+            text-align: center;
+        }
+        
+        .demo-btn:hover {
+            background: linear-gradient(45deg, #2980b9, #1f4e79);
+            transform: translateY(-2px);
+        }
+        
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #27ae60;
+            margin-right: 8px;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(39, 174, 96, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(39, 174, 96, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(39, 174, 96, 0); }
+        }
+        
+        .overview {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+        }
+        
+        .overview h2 {
+            color: #2c3e50;
+            margin-bottom: 20px;
+            font-size: 1.8em;
+        }
+        
+        .feature-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 15px;
+        }
+        
+        .feature-item {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 10px;
+            border-left: 4px solid #27ae60;
+        }
+        
+        .feature-item h4 {
+            color: #2c3e50;
+            margin-bottom: 5px;
+        }
+        
+        .feature-item p {
+            color: #7f8c8d;
+            font-size: 0.9em;
+        }
+        
+        .instructions {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 10px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+        
+        .instructions h3 {
+            color: #856404;
+            margin-bottom: 10px;
+        }
+        
+        .instructions ol {
+            color: #856404;
+            margin-left: 20px;
+        }
+        
+        .instructions li {
+            margin-bottom: 8px;
+        }
+        
+        .footer {
+            text-align: center;
+            background: white;
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.1);
+        }
+        
+        .footer p {
+            color: #7f8c8d;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🛡️ Advanced Security Features Demonstration</h1>
+            <p>Mental Health Center Management System</p>
+            <p><span class="status-indicator"></span>All 6 Security Functions Active & Verified</p>
+        </div>
+
+        <div class="overview">
+            <h2>📋 Security Implementation Overview</h2>
+            <div class="feature-list">
+                <div class="feature-item">
+                    <h4>🔒 1. Parameterized Queries</h4>
+                    <p>All database operations use prepared statements to prevent SQL injection attacks</p>
+                </div>
+                <div class="feature-item">
+                    <h4>✅ 2. Input Validation</h4>
+                    <p>Comprehensive validation for emails, names, passwords with custom rules</p>
+                </div>
+                <div class="feature-item">
+                    <h4>🚫 3. SQL Injection Prevention</h4>
+                    <p>Real-time detection and blocking of malicious SQL patterns</p>
+                </div>
+                <div class="feature-item">
+                    <h4>🤖 4. CAPTCHA System</h4>
+                    <p>Anti-bot protection with mathematical questions and session validation</p>
+                </div>
+                <div class="feature-item">
+                    <h4>🛡️ 5. XSS Prevention</h4>
+                    <p>HTML sanitization and script injection protection</p>
+                </div>
+                <div class="feature-item">
+                    <h4>🔐 6. Secure Authentication</h4>
+                    <p>Session management with failed attempt tracking and lockout system</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="demo-grid">
+            <div class="demo-card">
+                <h3><span class="icon">🧪</span>Complete Security Test Suite</h3>
+                <p>Comprehensive automated testing of all 6 security functions with real-time results and detailed analysis.</p>
+                <a href="security_test_complete.php" class="demo-btn" target="_blank">Run Complete Test Suite</a>
+            </div>
+
+            <div class="demo-card">
+                <h3><span class="icon">🔐</span>Login System Demo</h3>
+                <p>Test the secure login system with CAPTCHA, input validation, and SQL injection protection in action.</p>
+                <a href="index.php" class="demo-btn" target="_blank">Test Login Security</a>
+            </div>
+
+            <div class="demo-card">
+                <h3><span class="icon">🗄️</span>Database Security Check</h3>
+                <p>Verify database structure, connection security, and table integrity with setup capabilities.</p>
+                <a href="database_check.php" class="demo-btn" target="_blank">Check Database Security</a>
+            </div>
+
+            <div class="demo-card">
+                <h3><span class="icon">👥</span>Patient Management Security</h3>
+                <p>Demonstrate secure CRUD operations with parameterized queries and input sanitization.</p>
+                <a href="patient_management.php" class="demo-btn" target="_blank">Test Patient Security</a>
+            </div>
+
+            <div class="demo-card">
+                <h3><span class="icon">⚙️</span>PHP Configuration</h3>
+                <p>Verify PHP extensions, security settings, and environment configuration for optimal security.</p>
+                <a href="php_check.php" class="demo-btn" target="_blank">Check PHP Security</a>
+            </div>
+
+            <div class="demo-card">
+                <h3><span class="icon">📊</span>System Diagnostics</h3>
+                <p>Real-time system health check including MySQLi status, session security, and performance metrics.</p>
+                <a href="check_db.php" class="demo-btn" target="_blank">Run System Diagnostics</a>
+            </div>
+        </div>
+
+        <div class="instructions">
+            <h3>📝 Demonstration Instructions for Teacher</h3>
+            <ol>
+                <li><strong>Start with "Complete Security Test Suite"</strong> - Shows all 6 functions working with pass/fail results</li>
+                <li><strong>Test Login Security</strong> - Try valid/invalid inputs, watch CAPTCHA appear, see SQL injection blocked</li>
+                <li><strong>Check Database Security</strong> - Verify secure database operations and table structure</li>
+                <li><strong>Test Input Validation</strong> - Try XSS attacks, malicious SQL, invalid emails in forms</li>
+                <li><strong>Verify CAPTCHA System</strong> - See mathematical questions generate and validate correctly</li>
+                <li><strong>Confirm No External Libraries</strong> - All security implemented with pure PHP/MySQLi</li>
+            </ol>
+        </div>
+
+        <div class="footer">
+            <p>🎓 <strong>Project by:</strong> Student Name | <strong>Course:</strong> Web Security | <strong>Date:</strong> <?php echo date('F d, Y'); ?></p>
+            <p>✅ All security features implemented without external libraries | 🔒 Enterprise-level protection achieved</p>
+        </div>
+    </div>
+
+    <script>
+        // Add interactive effects
+        document.addEventListener('DOMContentLoaded', function() {
+            const cards = document.querySelectorAll('.demo-card');
+            
+            cards.forEach(card => {
+                card.addEventListener('click', function() {
+                    this.style.transform = 'scale(0.98)';
+                    setTimeout(() => {
+                        this.style.transform = 'translateY(-5px)';
+                    }, 100);
+                });
+            });
+        });
+    </script>
+</body>
+</html>

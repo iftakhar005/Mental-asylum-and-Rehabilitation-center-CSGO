@@ -8,6 +8,7 @@ error_reporting(0);
 ini_set('display_errors', 0);
 
 require_once 'db.php';
+require_once 'security_manager.php';
 require_once 'session_check.php';
 
 // Check if user is logged in and has appropriate permissions
@@ -45,96 +46,218 @@ function generateSecurePassword($length = 12) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     $action = $_POST['action'];
     
-    switch ($action) {
-        case 'add_patient':
-            // Validate required fields
-            $required_fields = ['name', 'dob', 'gender', 'admission_date', 'room', 'emergency_contact', 'type', 'mobility_status'];
-            $missing_fields = [];
-            
-            foreach ($required_fields as $field) {
-                if (empty($_POST[$field])) {
-                    $missing_fields[] = $field;
+    try {
+        switch ($action) {
+            case 'add_patient':
+                // Define validation rules for patient data
+                $validation_rules = [
+                    'name' => ['type' => 'name', 'max_length' => 100, 'required' => true],
+                    'dob' => ['type' => 'date', 'required' => true],
+                    'gender' => ['type' => 'string', 'max_length' => 10, 'required' => true],
+                    'admission_date' => ['type' => 'date', 'required' => true],
+                    'room' => ['type' => 'alphanumeric', 'max_length' => 20, 'required' => true],
+                    'emergency_contact' => ['type' => 'phone', 'max_length' => 20, 'required' => true],
+                    'type' => ['type' => 'string', 'max_length' => 50, 'required' => true],
+                    'mobility_status' => ['type' => 'string', 'max_length' => 50, 'required' => true],
+                    'medical_history' => ['type' => 'string', 'max_length' => 1000, 'required' => false],
+                    'current_medications' => ['type' => 'string', 'max_length' => 1000, 'required' => false]
+                ];
+                
+                // Validate and sanitize all inputs
+                $validated_data = $securityManager->processFormData($_POST, $validation_rules);
+                
+                // Generate patient ID
+                $patient_id = 'ARC-' . date('Ymd') . '-' . rand(1000, 9999);
+                
+                // Insert into users table first
+                $username = 'patient_' . strtolower(explode(' ', $validated_data['name'])[0]) . rand(100, 999);
+                $password = generateSecurePassword(12); // Temporary password
+                $hashed_password = password_hash($password, PASSWORD_DEFAULT);
+                
+                $email = $username . '@relative.gmail.com';
+                
+                $user_result = $securityManager->secureExecute(
+                    "INSERT INTO users (username, password_hash, email, role, first_name, last_name, contact_number, emergency_contact, date_of_birth, address, temp_password) 
+                     VALUES (?, ?, ?, 'relative', ?, '', '', ?, ?, '', ?)",
+                    [
+                        $username, 
+                        $hashed_password, 
+                        $email, 
+                        $validated_data['name'], 
+                        $validated_data['emergency_contact'], 
+                        $validated_data['dob'], 
+                        $password
+                    ],
+                    'sssssss'
+                );
+                
+                if (!$user_result['success']) {
+                    throw new Exception('Error creating user account');
                 }
-            }
-            
-            if (!empty($missing_fields)) {
-                $response['message'] = 'Missing required fields: ' . implode(', ', $missing_fields);
+                
+                $user_id = $user_result['insert_id'];
+                
+                // Insert into patients table using secure query
+                $patient_result = $securityManager->secureExecute(
+                    "INSERT INTO patients (user_id, patient_id, full_name, date_of_birth, gender, contact_number, emergency_contact, medical_history, current_medications, admission_date, room_number, status, type, mobility_status) 
+                     VALUES (?, ?, ?, ?, ?, '', ?, ?, ?, ?, ?, 'admitted', ?, ?)",
+                    [
+                        $user_id,
+                        $patient_id,
+                        $validated_data['name'],
+                        $validated_data['dob'],
+                        $validated_data['gender'],
+                        $validated_data['emergency_contact'],
+                        $validated_data['medical_history'],
+                        $validated_data['current_medications'],
+                        $validated_data['admission_date'],
+                        $validated_data['room'],
+                        $validated_data['type'],
+                        $validated_data['mobility_status']
+                    ],
+                    'isssssssssss'
+                );
+                
+                if (!$patient_result['success']) {
+                    throw new Exception('Error creating patient record');
+                }
+                
+                // Log the action
+                $securityManager->logSecurityEvent('PATIENT_ADDED', [
+                    'patient_id' => $patient_id,
+                    'admin_user_id' => $_SESSION['user_id']
+                ]);
+                
+                $response['success'] = true;
+                $response['message'] = 'Patient added successfully';
+                $response['data'] = [
+                    'patient_id' => $patient_id,
+                    'username' => $username,
+                    'temp_password' => $password
+                ];
                 break;
-            }
-            
-            // Sanitize input
-            $name = $conn->real_escape_string($_POST['name']);
-            $dob = $conn->real_escape_string($_POST['dob']);
-            $gender = $conn->real_escape_string($_POST['gender']);
-            $admission_date = $conn->real_escape_string($_POST['admission_date']);
-            $room = $conn->real_escape_string($_POST['room']);
-            $emergency_contact = $conn->real_escape_string($_POST['emergency_contact']);
-            $type = $conn->real_escape_string($_POST['type']);
-            $mobility_status = $conn->real_escape_string($_POST['mobility_status']);
-            $medical_history = $conn->real_escape_string($_POST['medical_history'] ?? '');
-            $current_medications = $conn->real_escape_string($_POST['current_medications'] ?? '');
-            
-            // Generate patient ID
-            $patient_id = 'ARC-' . date('Ymd') . '-' . rand(1000, 9999);
-            
-            // Insert into users table first
-            $username = 'patient_' . strtolower(explode(' ', $name)[0]) . rand(100, 999);
-            $password = generateSecurePassword(12); // Temporary password
-            $hashed_password = password_hash($password, PASSWORD_DEFAULT);
-            
-            $email = $username . '@relative.gmail.com';
-            $user_insert = $conn->query("INSERT INTO users (username, password_hash, email, role, first_name, last_name, contact_number, emergency_contact, date_of_birth, address, temp_password) 
-                         VALUES ('$username', '$hashed_password', '$email', 'relative', '$name', '', '', '$emergency_contact', '$dob', '', '$password')");
-            
-            if (!$user_insert || $conn->error) {
-                $response['message'] = 'Error creating user account: ' . $conn->error;
-                break;
-            }
-            
-            $user_id = $conn->insert_id;
-            
-            // Insert into patients table
-            $patient_insert = $conn->query("INSERT INTO patients (user_id, patient_id, full_name, date_of_birth, gender, contact_number, emergency_contact, medical_history, current_medications, admission_date, room_number, status, type, mobility_status) 
-                         VALUES ($user_id, '$patient_id', '$name', '$dob', '$gender', '', '$emergency_contact', '$medical_history', '$current_medications', '$admission_date', '$room', 'admitted', '$type', '$mobility_status')");
-            
-            if (!$patient_insert || $conn->error) {
-                // Rollback user creation if patient creation fails
-                $conn->query("DELETE FROM users WHERE id = $user_id");
-                $response['message'] = 'Error adding patient: ' . $conn->error;
-                break;
-            }
-            
-            $response['success'] = true;
-            $response['message'] = 'Patient added successfully';
-            $response['patient_id'] = $patient_id;
-            $response['username'] = $username;
-            $response['password'] = $password;
-            break;
-            
+                
         case 'update_patient':
-            if (empty($_POST['patient_id'])) {
-                $response['message'] = 'Patient ID is required';
-                break;
-            }
-            
-            $patient_id = $conn->real_escape_string($_POST['patient_id']);
-            $updates = [];
-            
-            // Build update query based on provided fields
-            $fields = ['name', 'dob', 'gender', 'room', 'emergency_contact', 'medical_history', 'current_medications', 'type'];
-            foreach ($fields as $field) {
-                if (isset($_POST[$field])) {
-                    $value = $conn->real_escape_string($_POST[$field]);
-                    $updates[] = "$field = '$value'";
+                // Validate required patient ID
+                if (empty($_POST['patient_id'])) {
+                    throw new Exception('Patient ID is required');
                 }
-            }
-            
-            if (empty($updates)) {
-                $response['message'] = 'No fields to update';
+                
+                $patient_id = $securityManager->validateInput($_POST['patient_id'], [
+                    'type' => 'string',
+                    'max_length' => 50,
+                    'required' => true
+                ]);
+                
+                // Define validation rules for updateable fields
+                $update_rules = [
+                    'name' => ['type' => 'name', 'max_length' => 100, 'required' => false],
+                    'dob' => ['type' => 'date', 'required' => false],
+                    'gender' => ['type' => 'string', 'max_length' => 10, 'required' => false],
+                    'room' => ['type' => 'alphanumeric', 'max_length' => 20, 'required' => false],
+                    'emergency_contact' => ['type' => 'phone', 'max_length' => 20, 'required' => false],
+                    'medical_history' => ['type' => 'string', 'max_length' => 1000, 'required' => false],
+                    'current_medications' => ['type' => 'string', 'max_length' => 1000, 'required' => false],
+                    'type' => ['type' => 'string', 'max_length' => 50, 'required' => false]
+                ];
+                
+                // Process only the fields that are provided
+                $updates = [];
+                $params = [];
+                $types = '';
+                
+                $field_mapping = [
+                    'name' => 'full_name',
+                    'dob' => 'date_of_birth',
+                    'gender' => 'gender',
+                    'room' => 'room_number',
+                    'emergency_contact' => 'emergency_contact',
+                    'medical_history' => 'medical_history',
+                    'current_medications' => 'current_medications',
+                    'type' => 'type'
+                ];
+                
+                foreach ($field_mapping as $input_field => $db_field) {
+                    if (isset($_POST[$input_field]) && $_POST[$input_field] !== '') {
+                        $validated_value = $securityManager->validateInput($_POST[$input_field], $update_rules[$input_field]);
+                        $updates[] = "$db_field = ?";
+                        $params[] = $validated_value;
+                        $types .= 's';
+                    }
+                }
+                
+                if (empty($updates)) {
+                    throw new Exception('No fields to update');
+                }
+                
+                // Add patient_id parameter
+                $params[] = $patient_id;
+                $types .= 's';
+                
+                $update_query = "UPDATE patients SET " . implode(', ', $updates) . " WHERE patient_id = ?";
+                $result = $securityManager->secureExecute($update_query, $params, $types);
+                
+                if (!$result['success']) {
+                    throw new Exception('Error updating patient');
+                }
+                
+                // Log the action
+                $securityManager->logSecurityEvent('PATIENT_UPDATED', [
+                    'patient_id' => $patient_id,
+                    'admin_user_id' => $_SESSION['user_id'],
+                    'updated_fields' => array_keys($field_mapping)
+                ]);
+                
+                $response['success'] = true;
+                $response['message'] = 'Patient updated successfully';
                 break;
-            }
-            
-            $update_query = "UPDATE patients SET " . implode(', ', $updates) . " WHERE patient_id = '$patient_id'";
+                
+            case 'get_patient':
+                if (empty($_POST['patient_id'])) {
+                    throw new Exception('Patient ID is required');
+                }
+                
+                $patient_id = $securityManager->validateInput($_POST['patient_id'], [
+                    'type' => 'string',
+                    'max_length' => 50,
+                    'required' => true
+                ]);
+                
+                $result = $securityManager->secureSelect(
+                    "SELECT p.*, u.username, u.email, u.temp_password, u.first_name, u.last_name, u.contact_number, u.emergency_contact, u.date_of_birth, u.address, (
+                        SELECT s.full_name FROM patient_assessments pa
+                        LEFT JOIN staff s ON pa.assigned_doctor = s.staff_id
+                        WHERE pa.patient_id = p.patient_id AND pa.assigned_doctor IS NOT NULL
+                        ORDER BY pa.assessment_date DESC, pa.created_at DESC LIMIT 1
+                    ) AS assigned_doctor_name, (
+                        SELECT s2.full_name FROM patient_assessments pa2
+                        LEFT JOIN staff s2 ON pa2.assigned_therapist = s2.staff_id
+                        WHERE pa2.patient_id = p.patient_id AND pa2.assigned_therapist IS NOT NULL
+                        ORDER BY pa2.assessment_date DESC, pa2.created_at DESC LIMIT 1
+                    ) AS assigned_therapist_name
+                    FROM patients p 
+                    LEFT JOIN users u ON p.user_id = u.id 
+                    WHERE p.patient_id = ?",
+                    [$patient_id],
+                    's'
+                );
+                
+                if ($result->num_rows === 0) {
+                    throw new Exception('Patient not found');
+                }
+                
+                $patient_data = $result->fetch_assoc();
+                
+                // Sanitize output data
+                foreach ($patient_data as $key => $value) {
+                    if ($value !== null) {
+                        $patient_data[$key] = $securityManager->preventXSS($value);
+                    }
+                }
+                
+                $response['success'] = true;
+                $response['data'] = $patient_data;
+                break;
             $conn->query($update_query);
             
             if ($conn->error) {
@@ -540,6 +663,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             
         default:
             $response['message'] = 'Invalid action';
+    }
+    
+    } catch (Exception $e) {
+        // Log the security or validation error
+        $securityManager->logSecurityEvent('PATIENT_MANAGEMENT_ERROR', [
+            'action' => $action ?? 'unknown',
+            'error' => $e->getMessage(),
+            'user_id' => $_SESSION['user_id'] ?? null
+        ]);
+        
+        $response['success'] = false;
+        $response['message'] = $e->getMessage();
     }
     
     // Send JSON response for AJAX requests

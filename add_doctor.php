@@ -79,14 +79,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $gender = $_POST['gender'];
     $address = $_POST['address'];
     $phone = $_POST['phone'];
+    $email = $_POST['email']; // Use provided email instead of generating
     $experience = $_POST['experience'];
+    
     // Split full name into first and last name
     $nameParts = explode(' ', $full_name);
     $firstName = $nameParts[0];
     $lastName = end($nameParts);
+    
     // Generate credentials
     $staff_id = 'DOC-' . date('Ymd') . '-' . rand(1000, 9999);
-    $email = generateEmail($firstName, $lastName, 'doctor');
+    // $email = generateEmail($firstName, $lastName, 'doctor'); // Removed auto-generation
     $temp_password = generateSecurePassword(12);
     $hashed_password = password_hash($temp_password, PASSWORD_DEFAULT);
     
@@ -247,6 +250,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <input type="tel" id="phone" name="phone" class="form-control" placeholder="Enter phone number" required>
                     </div>
                     <div class="form-group">
+                        <label for="email">Email Address</label>
+                        <input type="email" id="email" name="email" class="form-control" placeholder="Enter email address" required>
+                    </div>
+                    <div class="form-group">
                         <label for="experience">Years of Experience</label>
                         <input type="text" id="experience" name="experience" class="form-control" placeholder="Enter years of experience">
                     </div>
@@ -265,12 +272,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         document.getElementById('staffForm').addEventListener('submit', function(e) {
             const email = document.getElementById('email').value;
             const phone = document.getElementById('phone').value;
-            // Simple email validation
+            
+            // Email validation
             if (!email.includes('@') || !email.includes('.')) {
                 alert('Please enter a valid email address');
                 e.preventDefault();
                 return;
             }
+            
             // Simple phone validation (at least 10 digits)
             const phoneDigits = phone.replace(/\D/g, '');
             if (phoneDigits.length < 10) {
@@ -278,6 +287,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 e.preventDefault();
                 return;
             }
+            
             // If validation passes, show success message
             alert('Staff member added successfully!');
         });
