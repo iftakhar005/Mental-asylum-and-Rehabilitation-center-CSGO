@@ -1,5 +1,15 @@
 <?php
+
 session_start();
+// Prevent browser from caching authenticated pages
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Cache-Control: post-check=0, pre-check=0', false);
+header('Pragma: no-cache');
+// Enforce session/role check for staff
+if (!isset($_SESSION['role']) || !in_array($_SESSION['role'], ['doctor','therapist','nurse','receptionist','chief-staff','staff'])) {
+    header('Location: index.php');
+    exit();
+}
 require_once 'db.php';
 
 // Check if user is logged in and has required role
@@ -23,6 +33,14 @@ $stmt->close();
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <script>
+    if (window.performance && window.performance.navigation.type === 2) {
+        window.location.reload(true);
+    }
+    if (!document.cookie.includes('PHPSESSID')) {
+        window.location.href = 'index.php';
+    }
+    </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Staff Dashboard</title>

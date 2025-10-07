@@ -1,5 +1,10 @@
 <?php
+
 require_once 'session_check.php';
+// Prevent browser from caching authenticated pages
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Cache-Control: post-check=0, pre-check=0', false);
+header('Pragma: no-cache');
 check_login(['doctor']);
 require_once 'db.php';
 

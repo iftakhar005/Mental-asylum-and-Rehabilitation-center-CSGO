@@ -1,4 +1,15 @@
 <?php
+
+session_start();
+// Prevent browser from caching authenticated pages
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Cache-Control: post-check=0, pre-check=0', false);
+header('Pragma: no-cache');
+// Enforce session/role check for chief-staff
+if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'chief-staff') {
+    header('Location: index.php');
+    exit();
+}
 require_once 'session_check.php';
 check_login(['chief-staff']);
 require_once 'db.php';
@@ -187,6 +198,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <script>
+    if (window.performance && window.performance.navigation.type === 2) {
+        window.location.reload(true);
+    }
+    if (!document.cookie.includes('PHPSESSID')) {
+        window.location.href = 'index.php';
+    }
+    </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Chief Staff Dashboard</title>

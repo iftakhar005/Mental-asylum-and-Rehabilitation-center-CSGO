@@ -1,4 +1,15 @@
+
 <?php
+// Prevent browser from caching authenticated pages
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Cache-Control: post-check=0, pre-check=0', false);
+header('Pragma: no-cache');
+session_start();
+// Enforce session/role check for receptionist
+if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'receptionist') {
+    header('Location: index.php');
+    exit();
+}
 require_once 'session_check.php';
 check_login(['receptionist']);
 require_once 'db.php';
@@ -11,6 +22,14 @@ $receptionist_name = htmlspecialchars($_SESSION['username'] ?? 'Receptionist');
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <script>
+    if (window.performance && window.performance.navigation.type === 2) {
+        window.location.reload(true);
+    }
+    if (!document.cookie.includes('PHPSESSID')) {
+        window.location.href = 'index.php';
+    }
+    </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Receptionist Dashboard</title>

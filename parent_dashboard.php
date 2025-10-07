@@ -1,6 +1,55 @@
 <?php
+
+
 session_start();
+// Prevent browser from caching authenticated pages
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Cache-Control: post-check=0, pre-check=0', false);
+header('Pragma: no-cache');
 require_once 'db.php';
+
+// --- Raw input validation and escaping functions ---
+function sanitize_input($input, $maxlen = 255) {
+    $input = preg_replace('/<[^>]*>/', '', $input); // Remove HTML tags
+    $input = preg_replace('/[\\\'\";`]/', '', $input); // Remove dangerous chars
+    $input = substr(trim($input), 0, $maxlen);
+    return $input;
+}
+
+// Add SQL injection pattern blocking function
+function block_sql_injection($input) {
+    $patterns = [
+        '/\b(SELECT|UNION|INSERT|UPDATE|DELETE|DROP|ALTER|TRUNCATE|RENAME|REPLACE|OR|AND)\b/i',
+        '/--/',
+        '/;/',
+        '/\*/',
+        '/\b(WHERE|LIKE|HAVING|GROUP BY|ORDER BY)\b/i'
+    ];
+    foreach ($patterns as $pattern) {
+        if (preg_match($pattern, $input)) {
+            die("Potential SQL injection detected.");
+        }
+    }
+    return $input;
+}
+function escape_html($string) {
+    $replacements = [
+        '&' => '&amp;',
+        '<' => '&lt;',
+        '>' => '&gt;',
+        '"' => '&quot;',
+        "'" => '&#039;',
+    ];
+    return strtr($string, $replacements);
+}
+
+// Add input length restrictions and sanitization function
+function sanitize_input_full($input, $max_length) {
+    $input = trim($input); // Remove unnecessary whitespace
+    $input = substr($input, 0, $max_length); // Restrict length
+    $input = htmlspecialchars($input, ENT_QUOTES, 'UTF-8'); // Prevent XSS
+    return $input;
+}
 
 // Check if user is logged in as relative (parent uses relative credentials)
 if (!isset($_SESSION['user_id']) || !isset($_SESSION['role']) || $_SESSION['role'] !== 'relative') {
@@ -8,33 +57,49 @@ if (!isset($_SESSION['user_id']) || !isset($_SESSION['role']) || $_SESSION['role
     exit();
 }
 
-$user_id = $_SESSION['user_id'];
+
+$user_id = isset($_SESSION['user_id']) ? sanitize_input($_SESSION['user_id'], 20) : '';
+block_sql_injection($user_id);
 
 // Fetch patient info
-$patient_query = $conn->query("SELECT p.*, u.email, u.username FROM patients p JOIN users u ON p.user_id = u.id WHERE u.id = $user_id LIMIT 1");
+$stmt = $conn->prepare("SELECT p.*, u.email, u.username FROM patients p JOIN users u ON p.user_id = u.id WHERE u.id = ? LIMIT 1");
+$stmt->bind_param("i", $user_id);
+$stmt->execute();
+$patient_query = $stmt->get_result();
 $patient = $patient_query && $patient_query->num_rows > 0 ? $patient_query->fetch_assoc() : null;
+$stmt->close();
+
+if ($patient) {
+    // Sanitize all patient fields
+    foreach ($patient as $k => $v) {
+        $patient[$k] = sanitize_input($v, 255);
+        block_sql_injection($patient[$k]);
+    }
+}
 
 // Fetch assigned doctor and therapist (from latest assessment)
-$doctor_name = 'N/A';
-$therapist_name = 'N/A';
-$assessment = $conn->query("SELECT pa.assigned_doctor, d.full_name AS doctor_name, pa.assigned_therapist, t.full_name AS therapist_name FROM patient_assessments pa 
+$stmt = $conn->prepare("SELECT pa.assigned_doctor, d.full_name AS doctor_name, pa.assigned_therapist, t.full_name AS therapist_name FROM patient_assessments pa 
     LEFT JOIN staff d ON pa.assigned_doctor = d.staff_id 
     LEFT JOIN staff t ON pa.assigned_therapist = t.staff_id 
-    WHERE pa.patient_id = '{$patient['patient_id']}' 
+    WHERE pa.patient_id = ? 
     ORDER BY pa.assessment_date DESC, pa.created_at DESC LIMIT 1");
+$stmt->bind_param("i", $patient['patient_id']);
+$stmt->execute();
+$assessment = $stmt->get_result();
 if ($assessment && $assessment->num_rows > 0) {
     $row = $assessment->fetch_assoc();
     $doctor_name = $row['doctor_name'] ?: 'N/A';
     $therapist_name = $row['therapist_name'] ?: 'N/A';
 }
+$stmt->close();
 
 // Fetch all appointments for this patient (not just future ones)
-$appointments = [];
-$apt_result = $conn->query("SELECT * FROM appointments WHERE patient_id = '{$patient['patient_id']}' ORDER BY date DESC, time DESC");
-if ($apt_result) {
-    $appointments = $apt_result->fetch_all(MYSQLI_ASSOC);
-}
-
+$stmt = $conn->prepare("SELECT * FROM appointments WHERE patient_id = ? ORDER BY date DESC, time DESC");
+$stmt->bind_param("i", $patient['patient_id']);
+$stmt->execute();
+$apt_result = $stmt->get_result();
+$appointments = $apt_result->fetch_all(MYSQLI_ASSOC);
+$stmt->close();
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -328,34 +393,34 @@ if ($apt_result) {
                 <i class="fas fa-user"></i>
             </div>
             <div class="profile-info">
-                <h2><?php echo htmlspecialchars($patient['full_name']); ?></h2>
-                <div class="patient-id">Patient ID: <?php echo htmlspecialchars($patient['patient_id']); ?></div>
-                <div class="status">Status: <?php echo htmlspecialchars($patient['status']); ?></div>
+                <h2><?php echo escape_html($patient['full_name']); ?></h2>
+                <div class="patient-id">Patient ID: <?php echo escape_html($patient['patient_id']); ?></div>
+                <div class="status">Status: <?php echo escape_html($patient['status']); ?></div>
                 <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#patientDetailsModal" style="margin-top:12px;">View Full Details</button>
             </div>
         </div>
         <div class="info-cards">
             <div class="info-card">
                 <div class="label"><i class="fas fa-door-open"></i> Room</div>
-                <div class="value"><?php echo htmlspecialchars($patient['room_number']); ?></div>
+                <div class="value"><?php echo escape_html($patient['room_number']); ?></div>
             </div>
             <div class="info-card">
                 <div class="label"><i class="fas fa-envelope"></i> Email</div>
-                <div class="value"><?php echo htmlspecialchars($patient['email']); ?></div>
+                <div class="value"><?php echo escape_html($patient['email']); ?></div>
             </div>
             <div class="info-card">
                 <div class="label"><i class="fas fa-user-tag"></i> Type</div>
-                <div class="value"><?php echo htmlspecialchars($patient['type']); ?></div>
+                <div class="value"><?php echo escape_html($patient['type']); ?></div>
             </div>
         </div>
         <div class="doctor-therapist">
             <div class="dt-card">
                 <div class="label"><i class="fas fa-user-md"></i> Assigned Doctor</div>
-                <div class="value"><?php echo htmlspecialchars($doctor_name); ?></div>
+                <div class="value"><?php echo escape_html($doctor_name); ?></div>
             </div>
             <div class="dt-card">
                 <div class="label"><i class="fas fa-user-nurse"></i> Assigned Therapist</div>
-                <div class="value"><?php echo htmlspecialchars($therapist_name); ?></div>
+                <div class="value"><?php echo escape_html($therapist_name); ?></div>
             </div>
         </div>
         <div class="appointments-section" id="appointments-section">
@@ -366,17 +431,17 @@ if ($apt_result) {
                 <div class="timeline-event">
                     <div class="timeline-dot"></div>
                     <div class="timeline-content">
-                        <div><strong>Date:</strong> <?php echo htmlspecialchars($apt['date']); ?> <strong>Time:</strong> <?php echo htmlspecialchars($apt['time']); ?></div>
-                        <div><strong>Type:</strong> <?php echo htmlspecialchars($apt['type']); ?></div>
-                        <?php if (!empty($apt['doctor'])): ?><div><strong>Doctor:</strong> <?php echo htmlspecialchars($apt['doctor']); ?></div><?php endif; ?>
-                        <?php if (!empty($apt['therapist'])): ?><div><strong>Therapist:</strong> <?php echo htmlspecialchars($apt['therapist']); ?></div><?php endif; ?>
-                        <div><strong>Status:</strong> <?php echo htmlspecialchars($apt['status']); ?></div>
+                        <div><strong>Date:</strong> <?php echo escape_html($apt['date']); ?> <strong>Time:</strong> <?php echo escape_html($apt['time']); ?></div>
+                        <div><strong>Type:</strong> <?php echo escape_html($apt['type']); ?></div>
+                        <?php if (!empty($apt['doctor'])): ?><div><strong>Doctor:</strong> <?php echo escape_html($apt['doctor']); ?></div><?php endif; ?>
+                        <?php if (!empty($apt['therapist'])): ?><div><strong>Therapist:</strong> <?php echo escape_html($apt['therapist']); ?></div><?php endif; ?>
+                        <div><strong>Status:</strong> <?php echo escape_html($apt['status']); ?></div>
                     </div>
                 </div>
                 <?php endforeach; ?>
             </div>
             <?php else: ?>
-                <div style="color:#b85c00;">No appointments found for Patient ID: <?php echo htmlspecialchars($patient['patient_id']); ?></div>
+                <div style="color:#b85c00;">No appointments found for Patient ID: <?php echo escape_html($patient['patient_id']); ?></div>
             <?php endif; ?>
         </div>
         <!-- Appointments Modal -->
@@ -404,129 +469,129 @@ if ($apt_result) {
                     <?php endforeach; ?>
                 </div>
                 <?php else: ?>
-                    <div style="color:#b85c00;">No appointments found for Patient ID: <?php echo htmlspecialchars($patient['patient_id']); ?></div>
+                <div style="color:#b85c00;">No appointments found for Patient ID: <?php echo htmlspecialchars($patient['patient_id']); ?></div>
                 <?php endif; ?>
               </div>
             </div>
           </div>
         </div>
-        <!-- Modal -->
+        <!-- Patient Details Modal -->
         <div class="modal fade" id="patientDetailsModal" tabindex="-1" aria-labelledby="patientDetailsModalLabel" aria-hidden="true">
           <div class="modal-dialog modal-lg modal-dialog-centered">
             <div class="modal-content">
               <div class="modal-header">
-                <h5 class="modal-title" id="patientDetailsModalLabel">Full Patient Details</h5>
+                <h5 class="modal-title" id="patientDetailsModalLabel">Patient Details</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
               </div>
               <div class="modal-body">
                 <h6>Basic Information</h6>
                 <ul>
-                  <li><strong>Name:</strong> <?php echo htmlspecialchars($patient['full_name']); ?></li>
+                  <li><strong>Full Name:</strong> <?php echo htmlspecialchars($patient['full_name']); ?></li>
                   <li><strong>Patient ID:</strong> <?php echo htmlspecialchars($patient['patient_id']); ?></li>
-                  <li><strong>Status:</strong> <?php echo htmlspecialchars($patient['status']); ?></li>
-                  <li><strong>Room:</strong> <?php echo htmlspecialchars($patient['room_number']); ?></li>
                   <li><strong>Email:</strong> <?php echo htmlspecialchars($patient['email']); ?></li>
-                  <li><strong>Type:</strong> <?php echo htmlspecialchars($patient['type']); ?></li>
-                  <li><strong>Assigned Doctor:</strong> <?php echo htmlspecialchars($doctor_name); ?></li>
-                  <li><strong>Assigned Therapist:</strong> <?php echo htmlspecialchars($therapist_name); ?></li>
+                  <li><strong>Phone:</strong> <?php echo htmlspecialchars($patient['phone']); ?></li>
+                  <li><strong>Room Number:</strong> <?php echo htmlspecialchars($patient['room_number']); ?></li>
+                  <li><strong>Status:</strong> <?php echo htmlspecialchars($patient['status']); ?></li>
                 </ul>
                 <hr>
-                <h6>Medication Plan</h6>
-                <?php
-                $meds = [];
-                $sql = "SELECT mt.medication_type, mt.dosage, mt.schedule FROM treatments t JOIN medication_treatments mt ON t.id = mt.treatment_id WHERE t.patient_id = ? AND (mt.status = 'active' OR mt.status IS NULL) ORDER BY mt.start_date DESC, mt.created_at DESC LIMIT 5";
-                $stmt = $conn->prepare($sql);
-                $stmt->bind_param("i", $patient['id']);
-                $stmt->execute();
-                $res = $stmt->get_result();
-                while ($row = $res->fetch_assoc()) $meds[] = $row;
-                $stmt->close();
-                if (count($meds) > 0) {
-                  echo '<ul>';
-                  foreach ($meds as $m) {
-                    echo '<li><strong>' . htmlspecialchars($m['medication_type']) . ':</strong> ' . htmlspecialchars($m['dosage']) . ' (' . htmlspecialchars($m['schedule']) . ')</li>';
-                  }
-                  echo '</ul>';
-                } else {
-                  echo '<div>No medication plan found.</div>';
-                }
-                ?>
+                <h6>Medical Information</h6>
+                <ul>
+                  <li><strong>Allergies:</strong> <?php echo htmlspecialchars($patient['allergies']); ?></li>
+                  <li><strong>Medications:</strong> <?php echo htmlspecialchars($patient['medications']); ?></li>
+                  <li><strong>Conditions:</strong> <?php echo htmlspecialchars($patient['conditions']); ?></li>
+                </ul>
                 <hr>
-                <h6>Activities Plan</h6>
-                <?php
-                $activities = [];
-                $sql = "SELECT tt.therapy_type, tt.approach, tt.session_date FROM treatments t JOIN therapy_treatments tt ON t.id = tt.treatment_id WHERE t.patient_id = ? ORDER BY tt.session_date DESC, tt.created_at DESC LIMIT 5";
-                $stmt = $conn->prepare($sql);
-                $stmt->bind_param("i", $patient['id']);
-                $stmt->execute();
-                $res = $stmt->get_result();
-                while ($row = $res->fetch_assoc()) $activities[] = $row;
-                $stmt->close();
-                if (count($activities) > 0) {
-                  echo '<ul>';
-                  foreach ($activities as $a) {
-                    echo '<li><strong>' . htmlspecialchars($a['therapy_type']) . ':</strong> ' . htmlspecialchars($a['approach']) . ' (Session: ' . htmlspecialchars($a['session_date']) . ')</li>';
-                  }
-                  echo '</ul>';
-                } else {
-                  echo '<div>No activities plan found.</div>';
-                }
-                ?>
-                <hr>
-                <h6>Treatment Plan</h6>
-                <?php
-                $treatments = [];
-                $sql = "SELECT treatment_type, status, created_at FROM treatments WHERE patient_id = ? ORDER BY created_at DESC, id DESC LIMIT 5";
-                $stmt = $conn->prepare($sql);
-                $stmt->bind_param("i", $patient['id']);
-                $stmt->execute();
-                $res = $stmt->get_result();
-                while ($row = $res->fetch_assoc()) $treatments[] = $row;
-                $stmt->close();
-                if (count($treatments) > 0) {
-                  echo '<ul>';
-                  foreach ($treatments as $t) {
-                    echo '<li><strong>' . htmlspecialchars($t['treatment_type']) . ':</strong> Status: ' . htmlspecialchars($t['status']) . ' (Created: ' . htmlspecialchars($t['created_at']) . ')</li>';
-                  }
-                  echo '</ul>';
-                } else {
-                  echo '<div>No treatment plan found.</div>';
-                }
-                ?>
+                <h6>Assigned Staff</h6>
+                <ul>
+                  <li><strong>Doctor:</strong> <?php echo htmlspecialchars($doctor_name); ?></li>
+                  <li><strong>Therapist:</strong> <?php echo htmlspecialchars($therapist_name); ?></li>
+                </ul>
               </div>
             </div>
           </div>
         </div>
-        <!-- Bootstrap 5 JS and CSS -->
-        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-        <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
         <?php else: ?>
-            <div style="color:red;">Patient information not found.</div>
+        <div style="color:#b85c00;">No patient information found.</div>
         <?php endif; ?>
     </div>
+
+    <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/2.9.2/umd/popper.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.1.3/js/bootstrap.min.js"></script>
     <script>
-    // Sidebar: open modal for Patient Info
-    document.getElementById('patient-info-link').addEventListener('click', function(e) {
-        e.preventDefault();
-        var modal = new bootstrap.Modal(document.getElementById('patientDetailsModal'));
-        modal.show();
-    });
-    // Sidebar: open modal for Appointments
-    document.getElementById('appointments-btn').addEventListener('click', function(e) {
-        e.preventDefault();
-        var modal = new bootstrap.Modal(document.getElementById('appointmentsModal'));
-        modal.show();
-    });
-    // Smooth scroll for other sidebar anchor links
-    document.querySelectorAll('.sidebar-menu a[href^="#"]:not(#patient-info-link)').forEach(link => {
-        link.addEventListener('click', function(e) {
-            const target = document.querySelector(this.getAttribute('href'));
-            if (target) {
+        // Smooth scrolling for internal links
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
                 e.preventDefault();
-                target.scrollIntoView({ behavior: 'smooth' });
-            }
+
+                document.querySelector(this.getAttribute('href')).scrollIntoView({
+                    behavior: 'smooth'
+                });
+            });
         });
-    });
+
+        // Toggle active class on sidebar menu items
+        const sidebarLinks = document.querySelectorAll('.sidebar-menu a, .sidebar-menu .sidebar-btn');
+        sidebarLinks.forEach(link => {
+            link.addEventListener('click', () => {
+                sidebarLinks.forEach(i => i.classList.remove('active'));
+                link.classList.add('active');
+            });
+        });
+
+        // Show appointments in modal
+        document.getElementById('appointments-btn').addEventListener('click', () => {
+            const modalBody = document.querySelector('#appointmentsModal .modal-body');
+            modalBody.innerHTML = '<div class="text-center" style="padding: 40px 0;">Loading appointments...</div>';
+            $('#appointmentsModal').modal('show');
+            fetch('fetch_appointments.php', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: JSON.stringify({ patient_id: <?php echo $patient['patient_id']; ?> })
+            })
+            .then(response => response.json())
+            .then(data => {
+                modalBody.innerHTML = '';
+                if (data.success && data.appointments.length > 0) {
+                    const timeline = document.createElement('div');
+                    timeline.classList.add('timeline');
+                    data.appointments.forEach(apt => {
+                        const eventDiv = document.createElement('div');
+                        eventDiv.classList.add('timeline-event');
+                        eventDiv.innerHTML = `
+                            <div class="timeline-dot"></div>
+                            <div class="timeline-content">
+                                <div><strong>Date:</strong> ${apt.date} <strong>Time:</strong> ${apt.time}</div>
+                                <div><strong>Type:</strong> ${apt.type}</div>
+                                ${apt.doctor ? `<div><strong>Doctor:</strong> ${apt.doctor}</div>` : ''}
+                                ${apt.therapist ? `<div><strong>Therapist:</strong> ${apt.therapist}</div>` : ''}
+                                <div><strong>Status:</strong> ${apt.status}</div>
+                            </div>
+                        `;
+                        timeline.appendChild(eventDiv);
+                    });
+                    modalBody.appendChild(timeline);
+                } else {
+                    modalBody.innerHTML = '<div style="color:#b85c00;">No appointments found for this patient.</div>';
+                }
+            })
+            .catch(error => {
+                modalBody.innerHTML = '<div style="color:#b85c00;">Error loading appointments. Please try again later.</div>';
+                console.error('Error fetching appointments:', error);
+            });
+        });
+
+        // Patient info link click
+        document.getElementById('patient-info-link').addEventListener('click', (e) => {
+            e.preventDefault();
+            const profileSection = document.getElementById('profile-section');
+            const appointmentsSection = document.getElementById('appointments-section');
+            profileSection.scrollIntoView({ behavior: 'smooth' });
+        });
     </script>
 </body>
-</html> 
+</html>

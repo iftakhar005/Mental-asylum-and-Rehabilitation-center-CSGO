@@ -1,6 +1,16 @@
 <?php
 require_once 'db.php';
-session_start();
+
+$session_started = session_start();
+// Prevent browser from caching authenticated pages
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Cache-Control: post-check=0, pre-check=0', false);
+header('Pragma: no-cache');
+// Enforce session/role check for admin
+if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
+    header('Location: index.php');
+    exit();
+}
 
 // Fetch real data from the database
 $stats = [
@@ -164,6 +174,14 @@ if (isset($_POST['generate_id'])) {
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <script>
+    if (window.performance && window.performance.navigation.type === 2) {
+        window.location.reload(true);
+    }
+    if (!document.cookie.includes('PHPSESSID')) {
+        window.location.href = 'index.php';
+    }
+    </script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>United Medical Asylum & Rehab Facility - Admin Dashboard</title>

@@ -1,4 +1,15 @@
 <?php
+
+session_start();
+// Prevent browser from caching authenticated pages
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Cache-Control: post-check=0, pre-check=0', false);
+header('Pragma: no-cache');
+// Enforce session/role check for therapist
+if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'therapist') {
+    header('Location: index.php');
+    exit();
+}
 require_once 'session_check.php';
 check_login(['therapist']);
 require_once 'db.php';
@@ -83,6 +94,14 @@ while($row = $appointments_result->fetch_assoc()) {
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <script>
+    if (window.performance && window.performance.navigation.type === 2) {
+        window.location.reload(true);
+    }
+    if (!document.cookie.includes('PHPSESSID')) {
+        window.location.href = 'index.php';
+    }
+    </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Therapist Dashboard - United Medical Asylum & Rehab Facility</title>
