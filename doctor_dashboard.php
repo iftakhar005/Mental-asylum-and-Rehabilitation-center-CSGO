@@ -759,6 +759,12 @@ $recovery_rate = 94; // This should be calculated based on your actual data
                         Treatment
                     </a>
                 </li>
+                <li class="nav-item">
+                    <a href="export_requests.php" class="nav-link">
+                        <i class="fas fa-shield-alt"></i>
+                        Export Requests
+                    </a>
+                </li>
             </ul>
         </nav>
 

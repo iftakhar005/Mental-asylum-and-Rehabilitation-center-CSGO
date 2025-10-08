@@ -773,6 +773,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <i class="fas fa-utensils"></i>
                     <span>Meal Plans</span>
                 </a>
+                <a href="dlp_management.php" class="menu-item">
+                    <i class="fas fa-shield-alt"></i>
+                    <span>Export Requests</span>
+                </a>
                 <a href="logout.php" class="menu-item">
                     <i class="fas fa-sign-out-alt"></i>
                     <span>Logout</span>

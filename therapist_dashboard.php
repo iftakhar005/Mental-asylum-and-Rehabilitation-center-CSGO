@@ -248,6 +248,12 @@ while($row = $appointments_result->fetch_assoc()) {
                         Treatment
                     </a>
                 </li>
+                <li class="nav-item">
+                    <a href="export_requests.php" class="nav-link">
+                        <i class="fas fa-shield-alt"></i>
+                        Export Requests
+                    </a>
+                </li>
             </ul>
         </nav>
         <main class="main-content" id="mainContent">

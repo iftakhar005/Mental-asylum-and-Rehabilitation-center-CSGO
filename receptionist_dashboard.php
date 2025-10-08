@@ -1,17 +1,18 @@
 
 <?php
+require_once 'session_check.php';
+check_login(['receptionist']);
+
 // Prevent browser from caching authenticated pages
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 header('Cache-Control: post-check=0, pre-check=0', false);
 header('Pragma: no-cache');
-session_start();
+
 // Enforce session/role check for receptionist
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'receptionist') {
     header('Location: index.php');
     exit();
 }
-require_once 'session_check.php';
-check_login(['receptionist']);
 require_once 'db.php';
 
 // Fetch available rooms for patients
@@ -359,6 +360,7 @@ $receptionist_name = htmlspecialchars($_SESSION['username'] ?? 'Receptionist');
             <a href="#" class="active"><i class="fas fa-home"></i> Dashboard</a>
             <a href="#" id="tabAddBtn"><i class="fas fa-user-plus"></i> Add Patient</a>
             <a href="#" id="tabViewBtn"><i class="fas fa-users"></i> View Patients</a>
+            <a href="export_requests.php"><i class="fas fa-shield-alt"></i> Export Requests</a>
         </div>
         <div class="sidebar-spacer"></div>
         <div class="sidebar-logout">

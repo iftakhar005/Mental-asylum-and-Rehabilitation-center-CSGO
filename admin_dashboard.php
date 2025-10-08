@@ -647,9 +647,11 @@ if (isset($_POST['generate_id'])) {
     .card.rooms::before { background: linear-gradient(180deg, #b5179e, #7209b7); }
     .card.leaves::before { background: linear-gradient(180deg, #f43f5e, #f87171); }
     .card.notifications::before { background: linear-gradient(180deg, #6366f1, #818cf8); }
+    .card.dlp::before { background: linear-gradient(180deg, #10b981, #059669); }
     .card.patients .card-icon { color: #4361ee; }
     .card.staff .card-icon { color: #4895ef; }
     .card.appointments .card-icon { color: #f8961e; }
+    .card.dlp .card-icon { color: #10b981; }
     .card.rooms .card-icon { color: #b5179e; }
     .card.leaves .card-icon { color: #f43f5e; }
     .card.notifications .card-icon { color: #6366f1; }
@@ -1516,6 +1518,26 @@ if (isset($_POST['generate_id'])) {
         </div>
 
         <div class="menu-section">
+            <div class="menu-section-title">Security & Compliance</div>
+            <a href="#" class="menu-item">
+                <i class="fas fa-shield-alt"></i>
+                <span>Data Loss Prevention</span>
+                <i class="fas fa-chevron-right arrow"></i>
+            </a>
+            <div class="submenu">
+                <a href="dlp_management.php" class="submenu-item">
+                    <i class="fas fa-cog"></i> DLP Management
+                </a>
+                <a href="secure_export.php" class="submenu-item">
+                    <i class="fas fa-download"></i> Secure Export
+                </a>
+                <a href="check_dlp.php" class="submenu-item">
+                    <i class="fas fa-heartbeat"></i> System Health
+                </a>
+            </div>
+        </div>
+
+        <div class="menu-section">
             <div class="menu-section-title">System</div>
             <a href="logout.php" class="menu-item">
                 <i class="fas fa-sign-out-alt"></i>
@@ -1593,6 +1615,36 @@ if (isset($_POST['generate_id'])) {
                 </div>
             </div>
             <?php echo stat_arrow($stats['available_rooms'] ?? 0, $yesterday_rooms ?? 0); ?>
+        </div>
+        <div class="card dlp fade-in delay-4" onclick="window.location.href='dlp_management.php'" style="cursor: pointer;">
+            <div class="card-header">
+                <div>
+                    <div class="card-title">DLP Security</div>
+                    <div class="card-value" style="display:flex;align-items:center;gap:10px;">
+                        <span><?php 
+                        // Quick DLP stats
+                        $dlp_result = $conn->query("SELECT 
+                            (SELECT COUNT(*) FROM export_approval_requests WHERE status = 'pending') as pending_exports,
+                            (SELECT COUNT(*) FROM download_activity WHERE DATE(activity_time) = CURDATE()) as today_downloads,
+                            (SELECT COUNT(*) FROM data_access_audit WHERE DATE(access_time) = CURDATE() AND classification IN ('confidential', 'restricted')) as sensitive_access
+                        ");
+                        $dlp_stats = $dlp_result ? $dlp_result->fetch_assoc() : ['pending_exports' => 0, 'today_downloads' => 0, 'sensitive_access' => 0];
+                        
+                        if ($dlp_stats['pending_exports'] > 0) {
+                            echo '<span style="color: #f43f5e; font-weight: bold;">' . $dlp_stats['pending_exports'] . ' Pending</span>';
+                        } else {
+                            echo '<span style="color: #10b981;">' . $dlp_stats['today_downloads'] . ' Today</span>';    
+                        }
+                        ?></span>
+                    </div>
+                </div>
+                <div class="card-icon-bg">
+                    <i class="fas fa-shield-alt card-icon"></i>
+                </div>
+            </div>
+            <div class="card-delta" style="font-size: 11px; color: #6b7280;">
+                <?php echo $dlp_stats['sensitive_access']; ?> sensitive access today
+            </div>
         </div>
     </div>
 

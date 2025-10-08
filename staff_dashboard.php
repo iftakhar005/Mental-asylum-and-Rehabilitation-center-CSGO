@@ -227,6 +227,7 @@ $stmt->close();
             <div class="menu-item" id="assigned-patients-link" style="cursor:pointer;"><i class="fas fa-user-injured"></i><span>Assigned Patients</span></div>
             <div class="menu-item" id="medications-link" style="cursor:pointer;"><i class="fas fa-pills"></i><span>Medications</span></div>
             <div class="menu-item" id="activities-link" style="cursor:pointer;"><i class="fas fa-running"></i><span>Activities</span></div>
+            <div class="menu-item"><a href="export_requests.php" style="color:inherit;text-decoration:none;"><i class="fas fa-shield-alt"></i><span>Export Requests</span></a></div>
             <div class="menu-item"><a href="logout.php" style="color:inherit;text-decoration:none;"><i class="fas fa-sign-out-alt"></i><span>Logout</span></a></div>
         </div>
     </aside>
