@@ -374,10 +374,10 @@ class DataLossPreventionSystem {
         $retention_days = $policy['retention_days'];
         $archive_first = $policy['archive_before_delete'];
         
-        // Find records to be deleted
+    
         $cutoff_date = date('Y-m-d H:i:s', strtotime("-{$retention_days} days"));
         
-        // This is a simplified example - you should customize based on your table structures
+
         $date_column = $this->getDateColumnForTable($table_name);
         if (!$date_column) {
             return ['success' => false, 'error' => 'No date column found for retention policy'];
@@ -391,7 +391,7 @@ class DataLossPreventionSystem {
         
         if ($records_to_delete > 0) {
             if ($archive_first) {
-                // Archive before delete (simplified - you might want to export to file)
+       
                 $this->archiveOldRecords($table_name, $date_column, $cutoff_date);
             }
             
