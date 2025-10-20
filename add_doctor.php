@@ -81,6 +81,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $phone = $_POST['phone'];
     $email = $_POST['email']; // Use provided email instead of generating
     $experience = $_POST['experience'];
+    $enable_2fa = isset($_POST['enable_2fa']) ? 1 : 0; // Capture 2FA checkbox
     
     // Split full name into first and last name
     $nameParts = explode(' ', $full_name);
@@ -131,7 +132,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $user_id = $conn->insert_id;
         
         // Insert into staff table
-        $sql = "INSERT INTO staff (staff_id, full_name, role, dob, gender, address, experience, phone, password_hash, status, email, user_id, temp_password) VALUES ('$staff_id', '$full_name', 'doctor', '$dob', '$gender', '$address', '$experience', '$phone', '$hashed_password', 'Active', '$email', $user_id, '$temp_password')";
+        $sql = "INSERT INTO staff (staff_id, full_name, role, dob, gender, address, experience, phone, password_hash, status, email, user_id, temp_password, two_factor_enabled) VALUES ('$staff_id', '$full_name', 'doctor', '$dob', '$gender', '$address', '$experience', '$phone', '$hashed_password', 'Active', '$email', $user_id, '$temp_password', $enable_2fa)";
         
         if (!$conn->query($sql)) {
             throw new Exception("Error creating staff record: " . $conn->error);
@@ -257,6 +258,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <label for="experience">Years of Experience</label>
                         <input type="text" id="experience" name="experience" class="form-control" placeholder="Enter years of experience">
                     </div>
+                    
+                    <!-- 2FA Checkbox -->
+                    <div class="form-group" style="border: 2px solid #3498db; border-radius: 8px; padding: 16px; background: #ebf5fb;">
+                        <label style="display: flex; align-items: center; gap: 12px; cursor: pointer; margin: 0;">
+                            <input type="checkbox" name="enable_2fa" id="enable_2fa" value="1" style="width: 20px; height: 20px; cursor: pointer; accent-color: #3498db;">
+                            <div>
+                                <div style="font-weight: 600; color: #3498db; font-size: 15px; margin-bottom: 4px;">
+                                    <i class="fas fa-shield-alt" style="margin-right: 8px;"></i>
+                                    Enable Two-Factor Authentication (2FA)
+                                </div>
+                                <div style="font-size: 13px; color: #555; line-height: 1.4;">
+                                    When enabled, user will receive an OTP code via email during login for enhanced security.
+                                </div>
+                            </div>
+                        </label>
+                    </div>
+                    
                     <input type="hidden" name="position" value="Doctor">
                     <input type="hidden" name="department" value="Medical">
                     <div class="form-actions">

@@ -1,6 +1,8 @@
 <?php
 session_start();
 
+// Include 2FA functions
+require_once 'otp_functions.php';
 
 $login_error = '';
 $show_captcha = false;
@@ -130,18 +132,45 @@ function processLogin($email, $password, $remember) {
                 
                 // Look up the numeric user_id from the staff table
                 $user_result = $securityManager->secureSelect(
-                    "SELECT user_id FROM staff WHERE staff_id = ?",
+                    "SELECT user_id, two_factor_enabled FROM staff WHERE staff_id = ?",
                     [$staff_data['staff_id']],
                     's'
                 );
                 
                 $user_row = $user_result->fetch_assoc();
-                if ($user_row && !empty($user_row['user_id'])) {
-                    $_SESSION['user_id'] = $user_row['user_id'];
-                } else {
-                    $_SESSION['user_id'] = $staff_data['staff_id'];
+                $user_id = ($user_row && !empty($user_row['user_id'])) ? $user_row['user_id'] : $staff_data['staff_id'];
+                $two_factor_enabled = isset($user_row['two_factor_enabled']) ? (bool)$user_row['two_factor_enabled'] : false;
+                
+                // Check if 2FA is enabled for this user
+                if ($two_factor_enabled) {
+                    // Generate and send OTP
+                    $otp = generateOTP();
+                    
+                    if (storeOTP($user_id, $email, $otp, 10)) {
+                        if (sendOTPEmail($email, $staff_data['full_name'], $otp)) {
+                            // Store pending user data in session
+                            $_SESSION['otp_verification_pending'] = true;
+                            $_SESSION['otp_email'] = $email;
+                            $_SESSION['pending_user_id'] = $user_id;
+                            $_SESSION['pending_staff_id'] = $staff_data['staff_id'];
+                            $_SESSION['pending_username'] = $staff_data['full_name'];
+                            $_SESSION['pending_role'] = $staff_data['role'];
+                            
+                            // Redirect to OTP verification page
+                            header('Location: verify_otp.php');
+                            exit();
+                        } else {
+                            $login_error = 'Failed to send OTP email. Please contact support.';
+                            return false;
+                        }
+                    } else {
+                        $login_error = 'Failed to generate OTP. Please try again.';
+                        return false;
+                    }
                 }
                 
+                // No 2FA - proceed with normal login
+                $_SESSION['user_id'] = $user_id;
                 $_SESSION['staff_id'] = $staff_data['staff_id'];
                 $_SESSION['username'] = $staff_data['full_name'];
                 $_SESSION['role'] = $staff_data['role'];
@@ -181,7 +210,7 @@ function processLogin($email, $password, $remember) {
         } else {
             // If not found in staff table, check users table (for admin)
             $result = $securityManager->secureSelect(
-                "SELECT id, username, password_hash, role FROM users WHERE email = ?",
+                "SELECT id, username, password_hash, role, two_factor_enabled FROM users WHERE email = ?",
                 [$email],
                 's'
             );
@@ -193,6 +222,50 @@ function processLogin($email, $password, $remember) {
                     // Successful login - clear failed attempts
                     $securityManager->clearFailedAttempts();
                     
+                    // Check if 2FA is enabled
+                    $two_factor_enabled = isset($user_data['two_factor_enabled']) ? (bool)$user_data['two_factor_enabled'] : false;
+                    
+                    // Check database for 2FA status if not in query
+                    if (!isset($user_data['two_factor_enabled'])) {
+                        $check_2fa = $securityManager->secureSelect(
+                            "SELECT two_factor_enabled FROM users WHERE id = ?",
+                            [$user_data['id']],
+                            'i'
+                        );
+                        if ($check_2fa && $check_2fa->num_rows > 0) {
+                            $check_row = $check_2fa->fetch_assoc();
+                            $two_factor_enabled = (bool)$check_row['two_factor_enabled'];
+                        }
+                    }
+                    
+                    if ($two_factor_enabled) {
+                        // Generate and send OTP
+                        $otp = generateOTP();
+                        
+                        if (storeOTP($user_data['id'], $email, $otp, 10)) {
+                            if (sendOTPEmail($email, $user_data['username'], $otp)) {
+                                // Store pending user data in session
+                                $_SESSION['otp_verification_pending'] = true;
+                                $_SESSION['otp_email'] = $email;
+                                $_SESSION['pending_user_id'] = $user_data['id'];
+                                $_SESSION['pending_staff_id'] = $user_data['username'];
+                                $_SESSION['pending_username'] = $user_data['username'];
+                                $_SESSION['pending_role'] = $user_data['role'];
+                                
+                                // Redirect to OTP verification page
+                                header('Location: verify_otp.php');
+                                exit();
+                            } else {
+                                $login_error = 'Failed to send OTP email. Please contact support.';
+                                return false;
+                            }
+                        } else {
+                            $login_error = 'Failed to generate OTP. Please try again.';
+                            return false;
+                        }
+                    }
+                    
+                    // No 2FA - proceed with normal login
                     $_SESSION['user_id'] = $user_data['id'];
                     $_SESSION['staff_id'] = $user_data['username'];
                     $_SESSION['username'] = $user_data['username'];

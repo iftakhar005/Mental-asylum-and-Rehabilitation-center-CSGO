@@ -77,6 +77,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $phone = $conn->real_escape_string($_POST['phone']);
     $email = $conn->real_escape_string($_POST['email']); // Use provided email instead of generating
     $experience = $conn->real_escape_string($_POST['experience']);
+    $enable_2fa = isset($_POST['enable_2fa']) ? 1 : 0; // Capture 2FA checkbox
     
     // Split full name into first and last name
     $nameParts = explode(' ', $full_name);
@@ -94,7 +95,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($conn->query($sql_user)) {
         $user_id = $conn->insert_id;
         // Now insert into staff table using $user_id
-        $sql = "INSERT INTO staff (staff_id, full_name, role, dob, gender, address, experience, phone, password_hash, status, email, user_id, temp_password) VALUES ('$staff_id', '$full_name', 'receptionist', '$dob', '$gender', '$address', '$experience', '$phone', '$hashed_password', 'Active', '$email', $user_id, '$temp_password')";
+        $sql = "INSERT INTO staff (staff_id, full_name, role, dob, gender, address, experience, phone, password_hash, status, email, user_id, temp_password, two_factor_enabled) VALUES ('$staff_id', '$full_name', 'receptionist', '$dob', '$gender', '$address', '$experience', '$phone', '$hashed_password', 'Active', '$email', $user_id, '$temp_password', $enable_2fa)";
         if ($conn->query($sql)) {
             $success = true;
         } else {
@@ -348,6 +349,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div class="form-group">
                     <label class="form-label" for="experience">Years of Experience</label>
                     <input type="number" class="form-control" id="experience" name="experience" min="0" required>
+                </div>
+
+                <!-- 2FA Checkbox -->
+                <div class="form-group" style="border: 2px solid #667eea; border-radius: 12px; padding: 20px; background: #f0f4ff; margin-bottom: 24px;">
+                    <label style="display: flex; align-items: center; gap: 12px; cursor: pointer; margin: 0;">
+                        <input type="checkbox" name="enable_2fa" id="enable_2fa" value="1" style="width: 20px; height: 20px; cursor: pointer; accent-color: #667eea;">
+                        <div>
+                            <div style="font-weight: 600; color: #667eea; font-size: 16px; margin-bottom: 4px;">
+                                <i class="fas fa-shield-alt" style="margin-right: 8px;"></i>
+                                Enable Two-Factor Authentication (2FA)
+                            </div>
+                            <div style="font-size: 13px; color: #6b7280; line-height: 1.5;">
+                                When enabled, user will receive an OTP code via email during login for enhanced security.
+                            </div>
+                        </div>
+                    </label>
                 </div>
 
                 <button type="submit" class="btn btn-primary">Add Receptionist</button>

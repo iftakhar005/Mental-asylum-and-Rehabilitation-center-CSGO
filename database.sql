@@ -514,3 +514,25 @@ CREATE TABLE IF NOT EXISTS health_logs (
 
 
 
+-- Add 2FA columns to users table
+ALTER TABLE users 
+ADD COLUMN two_factor_enabled TINYINT(1) DEFAULT 0 AFTER status,
+ADD COLUMN two_factor_secret VARCHAR(255) DEFAULT NULL AFTER two_factor_enabled;
+
+-- Create OTP codes table for temporary OTP storage
+CREATE TABLE IF NOT EXISTS otp_codes (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    email VARCHAR(100) NOT NULL,
+    otp_code VARCHAR(6) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_at DATETIME NOT NULL,
+    is_used TINYINT(1) DEFAULT 0,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_email (email),
+    INDEX idx_otp_code (otp_code),
+    INDEX idx_expires_at (expires_at)
+);
+
+-- Clean up expired OTPs (optional, can be run periodically)
+-- DELETE FROM otp_codes WHERE expires_at < NOW() OR is_used = 1;
