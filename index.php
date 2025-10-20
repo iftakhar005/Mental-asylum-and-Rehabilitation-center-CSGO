@@ -1,4 +1,8 @@
 <?php
+// Load configuration for multi-device support
+require_once __DIR__ . '/config.php';
+
+// Start session with proper configuration
 session_start();
 
 // Include 2FA functions

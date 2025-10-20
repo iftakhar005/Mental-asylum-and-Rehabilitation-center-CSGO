@@ -122,15 +122,48 @@ class PropagationPrevention {
     /**
      * Generate a unique fingerprint for the session
      * Manual implementation without using hash functions
+     * Supports multi-device mode based on config
      */
     private function generateFingerprint() {
+        // Load configuration
+        if (!defined('FINGERPRINT_MODE')) {
+            require_once __DIR__ . '/config.php';
+        }
+        
         $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
         $user_agent = $_SERVER['HTTP_USER_AGENT'] ?? 'unknown';
         $accept_language = $_SERVER['HTTP_ACCEPT_LANGUAGE'] ?? 'unknown';
         $accept_encoding = $_SERVER['HTTP_ACCEPT_ENCODING'] ?? 'unknown';
         
-        // Manual fingerprint creation (concatenation + custom encoding)
-        $raw_fingerprint = $ip . '|' . $user_agent . '|' . $accept_language . '|' . $accept_encoding;
+        // Build fingerprint based on mode
+        $fingerprint_mode = defined('FINGERPRINT_MODE') ? FINGERPRINT_MODE : 'moderate';
+        
+        switch ($fingerprint_mode) {
+            case 'strict':
+                // Strict mode: IP + User Agent + Language + Encoding (single device only)
+                $raw_fingerprint = $ip . '|' . $user_agent . '|' . $accept_language . '|' . $accept_encoding;
+                break;
+                
+            case 'moderate':
+                // Moderate mode: User Agent only (allows IP changes for mobile users)
+                // This allows same device from different networks (mobile data, WiFi, etc.)
+                $raw_fingerprint = $user_agent . '|' . $accept_language;
+                break;
+                
+            case 'relaxed':
+                // Relaxed mode: Minimal fingerprint (allows multiple devices)
+                // Uses session data instead of browser fingerprint
+                if (isset($_SESSION['propagation_user_id'])) {
+                    $raw_fingerprint = 'user_' . $_SESSION['propagation_user_id'] . '_' . time();
+                } else {
+                    $raw_fingerprint = 'relaxed_' . time();
+                }
+                break;
+                
+            default:
+                // Default to moderate
+                $raw_fingerprint = $user_agent . '|' . $accept_language;
+        }
         
         // Custom hash-like function (manual implementation)
         return $this->customHash($raw_fingerprint);
