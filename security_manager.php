@@ -1,5 +1,7 @@
 <?php
 
+require_once __DIR__ . '/propagation_prevention.php';
+
 class MentalHealthSecurityManager {
     private $conn;
     private $failed_attempts = [];
@@ -7,13 +9,15 @@ class MentalHealthSecurityManager {
     private $max_login_attempts = 3;
     private $max_ban_attempts = 10; 
     private $lockout_duration = 600;
-    private $ban_duration = 300;  
+    private $ban_duration = 300;
+    private $propagation_prevention;  
     
     public function __construct($database_connection) {
         $this->conn = $database_connection;
         $this->initializeSession();
         $this->initializeFailedAttempts();
         $this->initializeBannedClients();
+        $this->propagation_prevention = new PropagationPrevention($database_connection);
     }
     
     private function initializeSession() {
@@ -671,6 +675,41 @@ class MentalHealthSecurityManager {
     
     public function testSQLInjectionDetection($input) {
         return $this->detectSQLInjection($input);
+    }
+    
+    /**
+     * Initialize propagation prevention for a user session
+     */
+    public function initializePropagationTracking($user_id, $role) {
+        return $this->propagation_prevention->initializeSessionTracking($user_id, $role);
+    }
+    
+    /**
+     * Validate session integrity (detect hijacking)
+     */
+    public function validateSessionIntegrity() {
+        return $this->propagation_prevention->validateSessionIntegrity();
+    }
+    
+    /**
+     * Validate role access (prevent privilege escalation)
+     */
+    public function validateRoleAccess($required_role) {
+        return $this->propagation_prevention->validateRoleAccess($required_role);
+    }
+    
+    /**
+     * Enforce role-based access control
+     */
+    public function enforceRBAC($required_role, $redirect_url = 'index.php') {
+        $this->propagation_prevention->enforceRBAC($required_role, $redirect_url);
+    }
+    
+    /**
+     * Get propagation prevention statistics
+     */
+    public function getPropagationStats() {
+        return $this->propagation_prevention->getPropagationStats();
     }
 }
 

@@ -146,6 +146,9 @@ function processLogin($email, $password, $remember) {
                 $_SESSION['username'] = $staff_data['full_name'];
                 $_SESSION['role'] = $staff_data['role'];
                 
+                // Initialize propagation prevention tracking
+                $securityManager->initializePropagationTracking($_SESSION['user_id'], $staff_data['role']);
+                
                 // Log successful login
                 $securityManager->logSecurityEvent('SUCCESSFUL_LOGIN', [
                     'user_id' => $_SESSION['user_id'],
@@ -194,6 +197,9 @@ function processLogin($email, $password, $remember) {
                     $_SESSION['staff_id'] = $user_data['username'];
                     $_SESSION['username'] = $user_data['username'];
                     $_SESSION['role'] = $user_data['role'];
+                    
+                    // Initialize propagation prevention tracking
+                    $securityManager->initializePropagationTracking($user_data['id'], $user_data['role']);
                     
                     // Log successful login
                     $securityManager->logSecurityEvent('SUCCESSFUL_LOGIN', [

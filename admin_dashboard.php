@@ -1,16 +1,15 @@
 <?php
+require_once 'session_protection.php';
 require_once 'db.php';
+
+// Protect this page - admin only
+enforceRole('admin');
 
 $session_started = session_start();
 // Prevent browser from caching authenticated pages
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 header('Cache-Control: post-check=0, pre-check=0', false);
 header('Pragma: no-cache');
-// Enforce session/role check for admin
-if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'admin') {
-    header('Location: index.php');
-    exit();
-}
 
 // Fetch real data from the database
 $stats = [

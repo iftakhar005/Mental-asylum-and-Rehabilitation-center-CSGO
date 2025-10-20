@@ -628,7 +628,7 @@ class DataLossPreventionSystem {
         $result = $stmt->get_result();
         
         $notifications = [];
-        while ($row = $result->fetch_assoc()) {
+        while ($row = $result->fetch_assoc()) {+-
             $notifications[] = [
                 'type' => 'export_request_' . $row['status'],
                 'title' => 'Export Request ' . ucfirst($row['status']),
