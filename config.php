@@ -33,31 +33,34 @@ define('DB_NAME', 'asylum_db');
 // ================================
 
 // Session cookie configuration for multi-device support
-ini_set('session.cookie_lifetime', 86400); // 24 hours
-ini_set('session.gc_maxlifetime', 86400);  // 24 hours
-ini_set('session.cookie_httponly', 1);     // Prevent JavaScript access
-ini_set('session.use_only_cookies', 1);    // Only use cookies, not URL parameters
+// IMPORTANT: These must be set BEFORE session_start() is called
+if (session_status() === PHP_SESSION_NONE) {
+    ini_set('session.cookie_lifetime', 86400); // 24 hours
+    ini_set('session.gc_maxlifetime', 86400);  // 24 hours
+    ini_set('session.cookie_httponly', 1);     // Prevent JavaScript access
+    ini_set('session.use_only_cookies', 1);    // Only use cookies, not URL parameters
 
-// Security headers for cookies
-// For LOCALHOST development (HTTP allowed)
-if ($_SERVER['SERVER_NAME'] === 'localhost' || $_SERVER['SERVER_ADDR'] === '127.0.0.1') {
-    ini_set('session.cookie_secure', 0);    // Allow HTTP for development
-    ini_set('session.cookie_samesite', 'Lax');
-} else {
-    // For PRODUCTION (HTTPS required)
-    ini_set('session.cookie_secure', 1);    // HTTPS only
-    ini_set('session.cookie_samesite', 'Strict');
+    // Security headers for cookies
+    // For LOCALHOST development (HTTP allowed)
+    if ($_SERVER['SERVER_NAME'] === 'localhost' || $_SERVER['SERVER_ADDR'] === '127.0.0.1') {
+        ini_set('session.cookie_secure', 0);    // Allow HTTP for development
+        ini_set('session.cookie_samesite', 'Lax');
+    } else {
+        // For PRODUCTION (HTTPS required)
+        ini_set('session.cookie_secure', 1);    // HTTPS only
+        ini_set('session.cookie_samesite', 'Strict');
+    }
+
+    // Set cookie domain and path for network access
+    // For localhost (default)
+    ini_set('session.cookie_domain', '');
+    ini_set('session.cookie_path', '/');
+
+    // For network access (uncomment and set your domain/IP)
+    // ini_set('session.cookie_domain', '.yourdomain.com'); // Allow all subdomains
+    // OR
+    // ini_set('session.cookie_domain', '192.168.1.100'); // Specific IP
 }
-
-// Set cookie domain and path for network access
-// For localhost (default)
-ini_set('session.cookie_domain', '');
-ini_set('session.cookie_path', '/');
-
-// For network access (uncomment and set your domain/IP)
-// ini_set('session.cookie_domain', '.yourdomain.com'); // Allow all subdomains
-// OR
-// ini_set('session.cookie_domain', '192.168.1.100'); // Specific IP
 
 // ================================
 // SECURITY CONFIGURATION

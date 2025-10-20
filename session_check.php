@@ -1,5 +1,7 @@
 <?php
-session_start();
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 
 // Include network security (security headers, HTTPS, rate limiting)
 require_once __DIR__ . '/security_network.php';

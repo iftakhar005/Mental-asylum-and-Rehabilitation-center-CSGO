@@ -423,14 +423,12 @@ class PropagationPrevention {
             $db_role = $row['role'];
             $stmt->close();
             
-            if ($db_role !== $session_role) {
-                return false;
-            }
-            return true;
+            // Role found in users table - verify match
+            return ($db_role === $session_role);
         }
         $stmt->close();
         
-        // Check staff table
+        // Not found in users table - check staff table
         $stmt = $this->conn->prepare("SELECT role FROM staff WHERE user_id = ?");
         
         if ($stmt === false) {
@@ -447,13 +445,12 @@ class PropagationPrevention {
             $db_role = $row['role'];
             $stmt->close();
             
-            if ($db_role !== $session_role) {
-                return false;
-            }
-            return true;
+            // Role found in staff table - verify match
+            return ($db_role === $session_role);
         }
         $stmt->close();
         
+        // Not found in either table
         return false;
     }
     

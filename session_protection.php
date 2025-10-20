@@ -29,6 +29,16 @@ if (!isset($securityManager)) {
 function protectPage($required_role = null) {
     global $securityManager;
     
+    // Clear any pending OTP verification if user is already logged in
+    if (isset($_SESSION['user_id']) && isset($_SESSION['role']) && isset($_SESSION['otp_verification_pending'])) {
+        unset($_SESSION['otp_verification_pending']);
+        unset($_SESSION['otp_email']);
+        unset($_SESSION['pending_user_id']);
+        unset($_SESSION['pending_staff_id']);
+        unset($_SESSION['pending_username']);
+        unset($_SESSION['pending_role']);
+    }
+    
     // Check if user is logged in
     if (!isset($_SESSION['user_id']) || !isset($_SESSION['role'])) {
         header('Location: index.php');

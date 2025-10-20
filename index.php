@@ -3,7 +3,9 @@
 require_once __DIR__ . '/config.php';
 
 // Start session with proper configuration
-session_start();
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 
 // Include 2FA functions
 require_once 'otp_functions.php';

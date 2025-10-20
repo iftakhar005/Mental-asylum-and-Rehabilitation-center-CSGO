@@ -1,11 +1,34 @@
 <?php
+// Start session first
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
 require_once 'session_protection.php';
 require_once 'db.php';
 
 // Protect this page - admin only
 enforceRole('admin');
 
-$session_started = session_start();
+/**
+ * 📝 AUDIT TRAIL HELPER: Log data modifications
+ * Logs INSERT, UPDATE, DELETE operations with old/new values
+ */
+function logDataModification($conn, $table_name, $record_id, $operation, $field_name = null, $old_value = null, $new_value = null, $reason = '') {
+    $user_id = $_SESSION['user_id'] ?? 0;
+    $ip_address = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+    
+    $sql = "INSERT INTO data_modification_history 
+            (user_id, table_name, record_id, operation_type, field_name, old_value, new_value, change_reason, ip_address) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+    
+    $stmt = $conn->prepare($sql);
+    if ($stmt) {
+        $stmt->bind_param('issssssss', $user_id, $table_name, $record_id, $operation, $field_name, $old_value, $new_value, $reason, $ip_address);
+        $stmt->execute();
+        $stmt->close();
+    }
+}
 // Prevent browser from caching authenticated pages
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 header('Cache-Control: post-check=0, pre-check=0', false);
@@ -42,6 +65,41 @@ $patients_result = $conn->query("SELECT p.*, u.username, u.first_name, u.last_na
 if ($patients_result) {
     $patients = $patients_result->fetch_all(MYSQLI_ASSOC);
     $stats['total_patients'] = count($patients);
+    
+    // 🔍 AUDIT TRAIL: Log patient data access
+    if ($patients_result->num_rows > 0) {
+        $user_id = $_SESSION['user_id'] ?? 0;
+        $user_role = $_SESSION['role'] ?? 'unknown';
+        $ip_address = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+        $user_agent = $_SERVER['HTTP_USER_AGENT'] ?? '';
+        $records_count = $patients_result->num_rows;
+        
+        // Log the access
+        $audit_sql = "INSERT INTO data_access_logs 
+                     (user_id, user_role, table_accessed, operation_type, records_affected, ip_address, user_agent, is_sensitive_data) 
+                     VALUES (?, ?, 'patients', 'SELECT', ?, ?, ?, TRUE)";
+        $audit_stmt = $conn->prepare($audit_sql);
+        if ($audit_stmt) {
+            $audit_stmt->bind_param('isiss', $user_id, $user_role, $records_count, $ip_address, $user_agent);
+            $audit_stmt->execute();
+            $audit_stmt->close();
+        }
+        
+        // ⚠️ BULK OPERATION ALERT: Check if exceeds threshold
+        $bulk_threshold = 50; // Alert if accessing more than 50 records
+        if ($records_count >= $bulk_threshold) {
+            $alert_sql = "INSERT INTO bulk_operation_alerts 
+                         (user_id, operation_type, table_accessed, records_count, threshold_exceeded, alert_level) 
+                         VALUES (?, 'SELECT', 'patients', ?, ?, 'WARNING')";
+            $alert_stmt = $conn->prepare($alert_sql);
+            if ($alert_stmt) {
+                $threshold_msg = "Accessed $records_count records (threshold: $bulk_threshold)";
+                $alert_stmt->bind_param('iis', $user_id, $records_count, $threshold_msg);
+                $alert_stmt->execute();
+                $alert_stmt->close();
+            }
+        }
+    }
 } else {
     error_log("Error fetching patients: " . $conn->error);
     $patients = [];
@@ -173,14 +231,6 @@ if (isset($_POST['generate_id'])) {
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <script>
-    if (window.performance && window.performance.navigation.type === 2) {
-        window.location.reload(true);
-    }
-    if (!document.cookie.includes('PHPSESSID')) {
-        window.location.href = 'index.php';
-    }
-    </script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>United Medical Asylum & Rehab Facility - Admin Dashboard</title>
@@ -1518,6 +1568,10 @@ if (isset($_POST['generate_id'])) {
 
         <div class="menu-section">
             <div class="menu-section-title">Security & Compliance</div>
+            <a href="audit_trail.php" class="menu-item">
+                <i class="fas fa-clipboard-list"></i>
+                <span>Audit Trail</span>
+            </a>
             <a href="#" class="menu-item">
                 <i class="fas fa-shield-alt"></i>
                 <span>Data Loss Prevention</span>
