@@ -1844,24 +1844,28 @@ if (isset($_POST['generate_id'])) {
 
 <script>
     document.addEventListener('DOMContentLoaded', function() {
-        // Sidebar Toggle
+        // Sidebar Toggle - with null checks
         const toggleSidebar = document.querySelector('.toggle-sidebar');
         const closeSidebar = document.querySelector('.close-sidebar');
         const sidebar = document.querySelector('.sidebar');
         const mainContent = document.querySelector('.main-content');
         const topbar = document.querySelector('.topbar');
 
-        toggleSidebar.addEventListener('click', () => {
-            sidebar.classList.add('active');
-            mainContent.classList.add('shifted');
-            topbar.classList.add('shifted');
-        });
+        if (toggleSidebar && sidebar && mainContent && topbar) {
+            toggleSidebar.addEventListener('click', () => {
+                sidebar.classList.add('active');
+                mainContent.classList.add('shifted');
+                topbar.classList.add('shifted');
+            });
+        }
 
-        closeSidebar.addEventListener('click', () => {
-            sidebar.classList.remove('active');
-            mainContent.classList.remove('shifted');
-            topbar.classList.remove('shifted');
-        });
+        if (closeSidebar && sidebar && mainContent && topbar) {
+            closeSidebar.addEventListener('click', () => {
+                sidebar.classList.remove('active');
+                mainContent.classList.remove('shifted');
+                topbar.classList.remove('shifted');
+            });
+        }
 
         // Menu Items Toggle
         const menuItems = document.querySelectorAll('.menu-item');
@@ -1891,14 +1895,16 @@ if (isset($_POST['generate_id'])) {
             }
         });
 
-        // Modal Functionality
+        // Modal Functionality - with null checks
         const addPatientBtn = document.getElementById('addPatientBtn');
         const addPatientModal = document.getElementById('addPatientModal');
         const closeModalBtns = document.querySelectorAll('.close-modal');
 
-        addPatientBtn.addEventListener('click', () => {
-            addPatientModal.classList.add('active');
-        });
+        if (addPatientBtn && addPatientModal) {
+            addPatientBtn.addEventListener('click', () => {
+                addPatientModal.classList.add('active');
+            });
+        }
 
         closeModalBtns.forEach(btn => {
             btn.addEventListener('click', () => {
@@ -1922,7 +1928,8 @@ if (isset($_POST['generate_id'])) {
         const closeSearchResults = document.querySelector('.close-search-results');
         let searchTimeout;
 
-        searchInput.addEventListener('input', function() {
+        if (searchInput && searchResults && searchResultsBody) {
+            searchInput.addEventListener('input', function() {
             clearTimeout(searchTimeout);
             const query = this.value.trim();
             
@@ -1979,7 +1986,8 @@ if (isset($_POST['generate_id'])) {
                         searchResultsBody.innerHTML = '<div class="no-results">An error occurred while searching</div>';
                     });
             }, 300);
-        });
+            });
+        }
 
         function getIconForType(type) {
             switch (type) {
@@ -2005,15 +2013,19 @@ if (isset($_POST['generate_id'])) {
         }
 
         // Close search results when clicking outside
-        document.addEventListener('click', (e) => {
-            if (!searchInput.contains(e.target) && !searchResults.contains(e.target)) {
-                searchResults.style.display = 'none';
-            }
-        });
+        if (searchInput && searchResults) {
+            document.addEventListener('click', (e) => {
+                if (!searchInput.contains(e.target) && !searchResults.contains(e.target)) {
+                    searchResults.style.display = 'none';
+                }
+            });
+        }
 
-        closeSearchResults.addEventListener('click', () => {
-            searchResults.style.display = 'none';
-        });
+        if (closeSearchResults && searchResults) {
+            closeSearchResults.addEventListener('click', () => {
+                searchResults.style.display = 'none';
+            });
+        }
 
         // Responsive handling
         function handleResize() {
@@ -2034,6 +2046,7 @@ if (isset($_POST['generate_id'])) {
         let notificationCheckInterval;
 
         function loadNotifications() {
+            if (!notificationList) return;
             notificationList.innerHTML = '<div class="notification-loading"><i class="fas fa-spinner"></i> Loading notifications...</div>';
             
             fetch('notification_handler.php?action=get&unread_only=true')
@@ -2142,34 +2155,42 @@ if (isset($_POST['generate_id'])) {
         }
 
         // Toggle notification dropdown
-        notificationBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            notificationDropdown.style.display = notificationDropdown.style.display === 'none' ? 'flex' : 'none';
-            if (notificationDropdown.style.display === 'flex') {
-                loadNotifications();
-                // Start checking for new notifications every 30 seconds
-                notificationCheckInterval = setInterval(loadNotifications, 30000);
-            } else {
-                clearInterval(notificationCheckInterval);
-            }
-        });
+        if (notificationBtn && notificationDropdown) {
+            notificationBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                notificationDropdown.style.display = notificationDropdown.style.display === 'none' ? 'flex' : 'none';
+                if (notificationDropdown.style.display === 'flex') {
+                    loadNotifications();
+                    // Start checking for new notifications every 30 seconds
+                    notificationCheckInterval = setInterval(loadNotifications, 30000);
+                } else {
+                    clearInterval(notificationCheckInterval);
+                }
+            });
+        }
 
         // Close notification dropdown when clicking outside
-        document.addEventListener('click', (e) => {
-            if (!notificationBtn.contains(e.target) && !notificationDropdown.contains(e.target)) {
-                notificationDropdown.style.display = 'none';
-                clearInterval(notificationCheckInterval);
-            }
-        });
+        if (notificationBtn && notificationDropdown) {
+            document.addEventListener('click', (e) => {
+                if (!notificationBtn.contains(e.target) && !notificationDropdown.contains(e.target)) {
+                    notificationDropdown.style.display = 'none';
+                    clearInterval(notificationCheckInterval);
+                }
+            });
+        }
 
         // Mark all as read
-        markAllReadBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            markAllAsRead();
-        });
+        if (markAllReadBtn) {
+            markAllReadBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                markAllAsRead();
+            });
+        }
 
         // Initial load of notifications
-        loadNotifications();
+        if (notificationBtn && notificationDropdown && notificationList) {
+            loadNotifications();
+        }
 
         // Add smooth scrolling for internal links
         document.querySelectorAll('a[href^="#"]').forEach(anchor => {

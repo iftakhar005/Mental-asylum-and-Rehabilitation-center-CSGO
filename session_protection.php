@@ -16,6 +16,7 @@ if (session_status() === PHP_SESSION_NONE) {
 // Include required files
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/security_manager.php';
+require_once __DIR__ . '/security_network.php';
 
 // Initialize security manager if not already done
 if (!isset($securityManager)) {

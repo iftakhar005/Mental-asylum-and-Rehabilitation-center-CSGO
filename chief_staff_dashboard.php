@@ -13,6 +13,8 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'chief-staff') {
 require_once 'session_check.php';
 check_login(['chief-staff']);
 require_once 'db.php';
+require_once 'simple_rsa_crypto.php';
+require_once 'security_decrypt.php';
 
 // Get data from database
 $patients_result = $conn->query("SELECT * FROM patients WHERE status != 'discharged' ORDER BY admission_date DESC LIMIT 20");
@@ -20,6 +22,13 @@ if (!$patients_result) {
     die("SQL Error (patients): " . $conn->error);
 }
 $patients = $patients_result->fetch_all(MYSQLI_ASSOC);
+
+// Decrypt patient data for chief-staff
+$current_user = [
+    'role' => $_SESSION['role'],
+    'username' => $_SESSION['username'] ?? 'chief-staff'
+];
+$patients = batch_decrypt_records($patients, $current_user, 'patient');
 
 $appointments_result = $conn->query("
     SELECT 
@@ -89,6 +98,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $mobility_status = $conn->real_escape_string($_POST['mobility_status']);
         $medical_history = $conn->real_escape_string($_POST['medical_history'] ?? '');
         $current_medications = $conn->real_escape_string($_POST['current_medications'] ?? '');
+        
+        // Encrypt sensitive patient data before storing
+        if (!empty($medical_history)) {
+            $medical_history = rsa_encrypt($medical_history);
+        }
+        if (!empty($current_medications)) {
+            $current_medications = rsa_encrypt($current_medications);
+        }
         
         // Generate patient ID
         $patient_id = 'ARC-' . date('Ymd') . '-' . rand(1000, 9999);

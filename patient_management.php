@@ -10,6 +10,8 @@ ini_set('display_errors', 0);
 require_once 'db.php';
 require_once 'security_manager.php';
 require_once 'session_check.php';
+require_once 'simple_rsa_crypto.php';
+require_once 'security_decrypt.php';
 
 // Check if user is logged in and has appropriate permissions
 check_login(['admin', 'chief-staff', 'doctor', 'nurse', 'receptionist']);
@@ -65,6 +67,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 
                 // Validate and sanitize all inputs
                 $validated_data = $securityManager->processFormData($_POST, $validation_rules);
+                
+                // Encrypt sensitive patient data before storing
+                if (!empty($validated_data['medical_history'])) {
+                    $validated_data['medical_history'] = rsa_encrypt($validated_data['medical_history']);
+                }
+                if (!empty($validated_data['current_medications'])) {
+                    $validated_data['current_medications'] = rsa_encrypt($validated_data['current_medications']);
+                }
                 
                 // Generate patient ID
                 $patient_id = 'ARC-' . date('Ymd') . '-' . rand(1000, 9999);
@@ -180,6 +190,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 foreach ($field_mapping as $input_field => $db_field) {
                     if (isset($_POST[$input_field]) && $_POST[$input_field] !== '') {
                         $validated_value = $securityManager->validateInput($_POST[$input_field], $update_rules[$input_field]);
+                        
+                        // Encrypt sensitive fields before updating
+                        if ($input_field === 'medical_history' || $input_field === 'current_medications') {
+                            $validated_value = rsa_encrypt($validated_value);
+                        }
+                        
                         $updates[] = "$db_field = ?";
                         $params[] = $validated_value;
                         $types .= 's';
@@ -248,6 +264,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 
                 $patient_data = $result->fetch_assoc();
                 
+                // Decrypt sensitive patient data based on user role
+                $current_user = [
+                    'role' => $_SESSION['role'] ?? 'guest',
+                    'username' => $_SESSION['username'] ?? 'unknown'
+                ];
+                $patient_data = decrypt_patient_medical_data($patient_data, $current_user);
+                
                 // Sanitize output data
                 foreach ($patient_data as $key => $value) {
                     if ($value !== null) {
@@ -292,8 +315,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             WHERE p.patient_id = '$patient_id'");
             
             if ($result && $result->num_rows > 0) {
+                $patient = $result->fetch_assoc();
+                
+                // Decrypt sensitive patient data based on user role
+                $current_user = [
+                    'role' => $_SESSION['role'] ?? 'guest',
+                    'username' => $_SESSION['username'] ?? 'unknown'
+                ];
+                $patient = decrypt_patient_medical_data($patient, $current_user);
+                
                 $response['success'] = true;
-                $response['patient'] = $result->fetch_assoc();
+                $response['patient'] = $patient;
             } else {
                 $response['message'] = 'Patient not found';
             }
@@ -322,6 +354,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             ORDER BY p.admission_date DESC");
             if ($result) {
                 $patients = $result->fetch_all(MYSQLI_ASSOC);
+                
+                // Decrypt patient data based on user role
+                $current_user = [
+                    'role' => $_SESSION['role'] ?? 'guest',
+                    'username' => $_SESSION['username'] ?? 'unknown'
+                ];
+                $patients = batch_decrypt_records($patients, $current_user, 'patient');
+                
                 // Attach appointments for each patient (progress_notes removed)
                 foreach ($patients as &$patient) {
                     $pid = $conn->real_escape_string($patient['patient_id']);
