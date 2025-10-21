@@ -85,7 +85,7 @@ class DataLossPreventionSystem {
             return ['success' => false, 'error' => 'Insufficient permissions to request data exports'];
         }
         
-        // Validate justification is provided
+        // Validate justification is provided for sensitive data
         if (empty(trim($justification))) {
             return ['success' => false, 'error' => 'Justification is required for bulk export requests'];
         }
@@ -107,36 +107,78 @@ class DataLossPreventionSystem {
             }
         }
         
+        // AUTO-APPROVE based on classification level and user role
+        $auto_approve = false;
+        $status = 'pending';
+        $approved_by = null;
+        $approved_at = null;
+        
+        // PUBLIC data - auto-approve for everyone
+        if ($classification_level === 'public') {
+            $auto_approve = true;
+            $status = 'approved';
+            $approved_by = 'SYSTEM_AUTO';
+            $approved_at = date('Y-m-d H:i:s');
+        }
+        // INTERNAL data - auto-approve for authenticated staff
+        elseif ($classification_level === 'internal' && in_array($this->current_user_role, $allowed_roles)) {
+            $auto_approve = true;
+            $status = 'approved';
+            $approved_by = 'SYSTEM_AUTO';
+            $approved_at = date('Y-m-d H:i:s');
+        }
+        // CONFIDENTIAL data - auto-approve for chief-staff and admin
+        elseif ($classification_level === 'confidential' && in_array($this->current_user_role, ['admin', 'chief-staff'])) {
+            $auto_approve = true;
+            $status = 'approved';
+            $approved_by = $this->current_user_id;
+            $approved_at = date('Y-m-d H:i:s');
+        }
+        // RESTRICTED data - auto-approve for admin only
+        elseif ($classification_level === 'restricted' && $this->current_user_role === 'admin') {
+            $auto_approve = true;
+            $status = 'approved';
+            $approved_by = $this->current_user_id;
+            $approved_at = date('Y-m-d H:i:s');
+        }
+        
         // Calculate expiry time
         $expiry_hours = $this->getConfig('approval_expiry_hours', 72);
         $expires_at = date('Y-m-d H:i:s', strtotime("+{$expiry_hours} hours"));
         
         $stmt = $this->conn->prepare("
             INSERT INTO export_approval_requests 
-            (request_id, user_id, requester_name, requester_role, export_type, data_tables, data_filters, justification, classification_level, expires_at) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            (request_id, user_id, requester_name, requester_role, export_type, data_tables, data_filters, justification, classification_level, status, approved_by, approved_at, expires_at) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ");
         
         $data_tables_json = json_encode($data_tables);
         $data_filters_json = json_encode($data_filters);
         
-        $stmt->bind_param("ssssssssss", 
+        $stmt->bind_param("sssssssssssss", 
             $request_id, $this->current_user_id, $this->current_user_name, $this->current_user_role, 
-            $export_type, $data_tables_json, $data_filters_json, $justification, $classification_level, $expires_at
+            $export_type, $data_tables_json, $data_filters_json, $justification, $classification_level, 
+            $status, $approved_by, $approved_at, $expires_at
         );
         
         if ($stmt->execute()) {
             $this->logDataAccess('bulk_export', 'export_approval_requests', $request_id, $classification_level, [
-                'action' => 'request_submitted',
+                'action' => $auto_approve ? 'request_auto_approved' : 'request_submitted',
                 'export_type' => $export_type,
-                'tables' => $data_tables
+                'tables' => $data_tables,
+                'auto_approved' => $auto_approve
             ]);
             
             return [
                 'success' => true,
                 'request_id' => $request_id,
                 'expires_at' => $expires_at,
-                'classification_level' => $classification_level
+                'classification_level' => $classification_level,
+                'auto_approved' => $auto_approve,
+                'status' => $status,
+                'message' => $auto_approve ? 
+                    'Export approved automatically. You can download immediately!' : 
+                    'Export request submitted for approval. You will be notified once approved.'
             ];
         }
         

@@ -342,6 +342,7 @@ class MentalHealthSecurityManager {
             $this->failed_attempts[$identifier] = [];
         }
        
+        // Remove expired login attempts (older than lockout duration)
         $this->failed_attempts[$identifier] = array_filter(
             $this->failed_attempts[$identifier],
             function($timestamp) use ($current_time) {
@@ -349,6 +350,13 @@ class MentalHealthSecurityManager {
             }
         );
         
+        // Ensure array is not null after filtering
+        if (!is_array($this->failed_attempts[$identifier])) {
+            $this->failed_attempts[$identifier] = [];
+        }
+        
+        // Re-index array after filtering
+        $this->failed_attempts[$identifier] = array_values($this->failed_attempts[$identifier]);
        
         $this->failed_attempts[$identifier][] = $current_time;
         $_SESSION['security_failed_attempts'] = $this->failed_attempts;
@@ -550,7 +558,7 @@ class MentalHealthSecurityManager {
         }
     }
     
-    private function escapeHTML($input) {
+    public function escapeHTML($input) {
         $translations = [
             '&' => '&amp;',
             '<' => '&lt;',
@@ -563,14 +571,14 @@ class MentalHealthSecurityManager {
         return strtr($input, $translations);
     }
     
-    private function escapeHTMLAttribute($input) {
+    public function escapeHTMLAttribute($input) {
         $safe = $this->escapeHTML($input);
         
         $safe = str_replace(["\n", "\r", "\t"], ['&#10;', '&#13;', '&#9;'], $safe);
         return $safe;
     }
     
-    private function escapeJavaScript($input) {
+    public function escapeJavaScript($input) {
         $translations = [
             '\\' => '\\\\',
             '"' => '\\"',
@@ -589,12 +597,12 @@ class MentalHealthSecurityManager {
         return strtr($input, $translations);
     }
     
-    private function escapeCSS($input) {
+    public function escapeCSS($input) {
         
         return preg_replace('/[^a-zA-Z0-9\-_]/', '', $input);
     }
     
-    private function escapeURL($input) {
+    public function escapeURL($input) {
         return rawurlencode($input);
     }
     

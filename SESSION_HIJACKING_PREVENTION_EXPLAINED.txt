@@ -1,0 +1,970 @@
+================================================================================
+    SESSION HIJACKING PREVENTION - COMPREHENSIVE EXPLANATION
+    Mental Asylum and Rehabilitation Center System
+================================================================================
+    Generated: 2025-10-21
+    System: MindCare Mental Health System
+    Security Module: Propagation Prevention & Session Protection
+================================================================================
+
+TABLE OF CONTENTS
+================================================================================
+1. OVERVIEW OF SESSION HIJACKING PREVENTION
+2. MULTI-LAYER DEFENSE MECHANISMS
+3. SESSION FINGERPRINTING
+4. SESSION VALIDATION & INTEGRITY CHECKS
+5. SESSION ROTATION & REGENERATION
+6. BLOCKED SESSION DETECTION
+7. INCIDENT LOGGING & MONITORING
+8. CONFIGURATION OPTIONS
+9. COMPLETE FLOW DIAGRAM
+10. CODE IMPLEMENTATION DETAILS
+
+================================================================================
+SECTION 1: OVERVIEW OF SESSION HIJACKING PREVENTION
+================================================================================
+
+WHAT IS SESSION HIJACKING?
+--------------------------------------------------------------------------------
+Session hijacking occurs when an attacker steals or guesses a user's session
+ID and uses it to impersonate the legitimate user. This can happen through:
+- Session ID theft (network sniffing, XSS attacks)
+- Session fixation (forcing a known session ID)
+- Man-in-the-middle attacks
+- Malware or browser extensions
+
+HOW THIS SYSTEM PREVENTS IT:
+--------------------------------------------------------------------------------
+The system implements a **multi-layer defense strategy** using:
+
+1. **Session Fingerprinting** - Creates unique browser/device signatures
+2. **Fingerprint Validation** - Detects when session is used from different device
+3. **Automatic Session Rotation** - Changes session ID periodically
+4. **Session Blocking** - Blacklists compromised sessions
+5. **Activity Monitoring** - Tracks and validates all session activity
+6. **Timeout Controls** - Expires old sessions automatically
+7. **Incident Logging** - Records all suspicious activity
+
+================================================================================
+SECTION 2: MULTI-LAYER DEFENSE MECHANISMS
+================================================================================
+
+LAYER 1: SESSION INITIALIZATION PROTECTION
+--------------------------------------------------------------------------------
+File: propagation_prevention.php
+Function: initializeSessionTracking()
+Lines: 194-231
+
+When user logs in:
+1. Creates unique session fingerprint
+2. Stores fingerprint in database (session_tracking table)
+3. Stores fingerprint in session ($_SESSION['propagation_fingerprint'])
+4. Records user_id, role, IP, user agent, timestamp
+5. Checks if session is already blocked
+
+Code Implementation:
+```php
+public function initializeSessionTracking($user_id, $role) {
+    // Generate fingerprint from browser characteristics
+    $this->session_fingerprint = $this->generateFingerprint();
+    
+    $session_id = session_id();
+    $ip = $_SERVER['REMOTE_ADDR'];
+    $user_agent = $_SERVER['HTTP_USER_AGENT'];
+    
+    // Check if session is blocked (prevent reuse of compromised session)
+    if ($this->isSessionBlocked($session_id)) {
+        $this->logPropagationIncident('session_hijacking', 
+                                      $user_id, 
+                                      'Blocked session attempted to continue');
+        $this->destroySession();
+        return false;
+    }
+    
+    // Store in database
+    INSERT INTO session_tracking 
+    (session_id, user_id, role, fingerprint, ip_address, user_agent) 
+    VALUES (?, ?, ?, ?, ?, ?)
+    
+    // Store in session for validation
+    $_SESSION['propagation_fingerprint'] = $this->session_fingerprint;
+    $_SESSION['propagation_created_at'] = time();
+    $_SESSION['propagation_last_rotation'] = time();
+}
+```
+
+LAYER 2: CONTINUOUS SESSION VALIDATION
+--------------------------------------------------------------------------------
+File: propagation_prevention.php
+Function: validateSessionIntegrity()
+Lines: 236-283
+
+On EVERY page request:
+1. Generates fresh fingerprint from current request
+2. Compares with stored fingerprint
+3. Checks if session is blocked
+4. Validates session timeout
+5. Rotates session ID periodically
+
+Code Implementation:
+```php
+public function validateSessionIntegrity() {
+    // Get stored fingerprint from session
+    $stored_fingerprint = $_SESSION['propagation_fingerprint'];
+    
+    // Generate fingerprint from current request
+    $current_fingerprint = $this->generateFingerprint();
+    
+    // Check if session is blocked
+    if ($this->isSessionBlocked(session_id())) {
+        $this->destroySession();
+        return false;
+    }
+    
+    // ⚠️ CRITICAL CHECK: Fingerprint mismatch = HIJACKING DETECTED
+    if ($current_fingerprint !== $stored_fingerprint) {
+        $this->detectSessionHijackingPropagation(
+            session_id(), 
+            $stored_fingerprint, 
+            $current_fingerprint
+        );
+        return false; // Session invalid - destroy and redirect
+    }
+    
+    // Check timeout (1 hour max)
+    if (time() - $_SESSION['propagation_created_at'] > 3600) {
+        $this->destroySession();
+        return false;
+    }
+    
+    // Rotate session ID every 15 minutes
+    if (time() - $_SESSION['propagation_last_rotation'] > 900) {
+        $this->rotateSessionId();
+    }
+    
+    return true; // Session valid
+}
+```
+
+LAYER 3: SESSION PROTECTION WRAPPER
+--------------------------------------------------------------------------------
+File: session_protection.php
+Function: protectPage()
+Lines: 28-59
+
+Every protected page calls protectPage() which:
+1. Checks if user is logged in
+2. Validates session integrity (calls validateSessionIntegrity)
+3. Validates role permissions
+4. Destroys session if validation fails
+
+Code Implementation:
+```php
+function protectPage($required_role = null) {
+    // Check login
+    if (!isset($_SESSION['user_id']) || !isset($_SESSION['role'])) {
+        header('Location: index.php');
+        exit();
+    }
+    
+    // ⚠️ VALIDATE SESSION INTEGRITY
+    if (!$securityManager->validateSessionIntegrity()) {
+        // HIJACKING DETECTED - destroy and redirect
+        session_unset();
+        session_destroy();
+        header('Location: index.php?error=session_invalid');
+        exit();
+    }
+    
+    // Validate role access
+    if ($required_role !== null) {
+        if (!$securityManager->validateRoleAccess($required_role)) {
+            session_destroy();
+            header('Location: index.php?error=unauthorized_access');
+            exit();
+        }
+    }
+}
+```
+
+Usage Example:
+```php
+<?php
+require_once 'session_protection.php';
+protectPage('admin'); // Only admin can access this page
+?>
+```
+
+LAYER 4: SESSION BLOCKING & INCIDENT RESPONSE
+--------------------------------------------------------------------------------
+File: propagation_prevention.php
+Function: detectSessionHijackingPropagation()
+Lines: 288-316
+
+When hijacking detected:
+1. Logs detailed incident
+2. Blocks the compromised session
+3. Invalidates ALL sessions for that user
+4. Destroys current session
+5. User must re-authenticate
+
+================================================================================
+SECTION 3: SESSION FINGERPRINTING
+================================================================================
+
+WHAT IS A SESSION FINGERPRINT?
+--------------------------------------------------------------------------------
+A fingerprint is a unique identifier created from browser/device characteristics
+that is nearly impossible to replicate by an attacker, even if they steal the
+session ID.
+
+HOW FINGERPRINT IS GENERATED
+--------------------------------------------------------------------------------
+File: propagation_prevention.php
+Function: generateFingerprint()
+Lines: 127-175
+
+The system supports 3 fingerprinting modes (configurable in config.php):
+
+MODE 1: STRICT (Single Device Only)
+------------------------------------
+Fingerprint includes:
+- IP Address (REMOTE_ADDR)
+- User Agent (HTTP_USER_AGENT)
+- Accept Language (HTTP_ACCEPT_LANGUAGE)
+- Accept Encoding (HTTP_ACCEPT_ENCODING)
+
+Formula:
+```
+fingerprint = hash(IP + UserAgent + Language + Encoding)
+```
+
+Pros: Maximum security
+Cons: Breaks when IP changes (mobile networks, VPN, WiFi switching)
+
+MODE 2: MODERATE (Mobile-Friendly) **DEFAULT**
+-----------------------------------------------
+Fingerprint includes:
+- User Agent (HTTP_USER_AGENT)
+- Accept Language (HTTP_ACCEPT_LANGUAGE)
+
+Formula:
+```
+fingerprint = hash(UserAgent + Language)
+```
+
+Pros: Works across IP changes (mobile data ↔ WiFi)
+Cons: Same browser type could generate same fingerprint
+
+MODE 3: RELAXED (Multi-Device)
+-------------------------------
+Fingerprint includes:
+- User ID + Timestamp
+
+Formula:
+```
+fingerprint = hash('user_' + user_id + '_' + timestamp)
+```
+
+Pros: Allows multiple devices
+Cons: Weaker protection against hijacking
+
+FINGERPRINT GENERATION CODE
+--------------------------------------------------------------------------------
+```php
+private function generateFingerprint() {
+    $fingerprint_mode = FINGERPRINT_MODE; // from config.php
+    
+    switch ($fingerprint_mode) {
+        case 'strict':
+            $raw = $_SERVER['REMOTE_ADDR'] . '|' . 
+                   $_SERVER['HTTP_USER_AGENT'] . '|' .
+                   $_SERVER['HTTP_ACCEPT_LANGUAGE'] . '|' .
+                   $_SERVER['HTTP_ACCEPT_ENCODING'];
+            break;
+            
+        case 'moderate': // DEFAULT
+            $raw = $_SERVER['HTTP_USER_AGENT'] . '|' .
+                   $_SERVER['HTTP_ACCEPT_LANGUAGE'];
+            break;
+            
+        case 'relaxed':
+            $raw = 'user_' . $_SESSION['propagation_user_id'] . '_' . time();
+            break;
+    }
+    
+    // Generate hash
+    return $this->customHash($raw);
+}
+```
+
+CUSTOM HASH FUNCTION (Manual Implementation)
+--------------------------------------------------------------------------------
+Lines: 180-192
+
+Instead of using built-in hash functions, the system implements a custom
+hash algorithm to avoid dependencies:
+
+```php
+private function customHash($input) {
+    $hash = 0;
+    $length = strlen($input);
+    
+    for ($i = 0; $i < $length; $i++) {
+        $char_code = ord($input[$i]);
+        $hash = (($hash << 5) - $hash) + $char_code;
+        $hash = $hash & 0xFFFFFFFF; // 32-bit integer
+    }
+    
+    return sprintf('%08x', $hash); // Convert to hex string
+}
+```
+
+================================================================================
+SECTION 4: SESSION VALIDATION & INTEGRITY CHECKS
+================================================================================
+
+VALIDATION HAPPENS ON EVERY REQUEST
+--------------------------------------------------------------------------------
+Every time a user accesses a protected page, the system validates:
+
+CHECK 1: Session Exists
+-----------------------
+```php
+if (!isset($_SESSION['propagation_fingerprint'])) {
+    // Session not initialized - possible attack
+    return false;
+}
+```
+
+CHECK 2: Session Not Blocked
+-----------------------------
+```php
+if ($this->isSessionBlocked(session_id())) {
+    // Session was previously flagged as compromised
+    $this->destroySession();
+    return false;
+}
+```
+
+Database Query:
+```sql
+SELECT id FROM blocked_sessions 
+WHERE session_id = ? 
+  AND is_active = 1 
+  AND expires_at > NOW()
+```
+
+CHECK 3: Fingerprint Match
+---------------------------
+```php
+$current_fingerprint = $this->generateFingerprint();
+$stored_fingerprint = $_SESSION['propagation_fingerprint'];
+
+if ($current_fingerprint !== $stored_fingerprint) {
+    // ⚠️ HIJACKING DETECTED - different device/browser
+    $this->detectSessionHijackingPropagation(...);
+    return false;
+}
+```
+
+This is the PRIMARY DEFENSE against session hijacking:
+- Attacker steals session ID
+- Attacker tries to use it from different browser/device
+- System generates different fingerprint
+- Fingerprints don't match → ATTACK BLOCKED
+
+CHECK 4: Session Timeout
+-------------------------
+```php
+$session_age = time() - $_SESSION['propagation_created_at'];
+if ($session_age > 3600) { // 1 hour
+    // Session too old - force re-authentication
+    $this->destroySession();
+    return false;
+}
+```
+
+CHECK 5: Activity Update
+-------------------------
+```php
+// Update last activity timestamp
+UPDATE session_tracking 
+SET last_activity = CURRENT_TIMESTAMP 
+WHERE session_id = ?
+```
+
+This helps detect:
+- Abandoned sessions
+- Concurrent usage patterns
+- Suspicious activity timing
+
+================================================================================
+SECTION 5: SESSION ROTATION & REGENERATION
+================================================================================
+
+WHY ROTATE SESSION IDs?
+--------------------------------------------------------------------------------
+Session rotation (regenerating session ID) prevents:
+1. Session fixation attacks
+2. Long-term session ID exposure
+3. Session ID prediction
+
+AUTOMATIC ROTATION EVERY 15 MINUTES
+--------------------------------------------------------------------------------
+File: propagation_prevention.php
+Function: rotateSessionId()
+Lines: 321-344
+
+Code:
+```php
+private function rotateSessionId() {
+    $old_session_id = session_id();
+    
+    // Regenerate session ID (PHP built-in)
+    session_regenerate_id(true); // true = delete old session file
+    
+    $new_session_id = session_id();
+    
+    // Update database tracking
+    UPDATE session_tracking 
+    SET session_id = ?, 
+        rotated_from = ? 
+    WHERE session_id = ?
+    
+    // Update rotation timestamp
+    $_SESSION['propagation_last_rotation'] = time();
+    
+    return $new_session_id;
+}
+```
+
+ROTATION TRIGGERS:
+1. Every 15 minutes (automatic)
+2. After 2FA verification (manual in verify_otp.php)
+3. After privilege escalation (security measure)
+
+ROTATION TIMELINE:
+```
+Time 0:00  - Login → Session ID: abc123
+Time 0:15  - Auto rotate → Session ID: def456
+Time 0:30  - Auto rotate → Session ID: ghi789
+Time 0:45  - Auto rotate → Session ID: jkl012
+Time 1:00  - Session expires
+```
+
+Benefits:
+- Attacker's stolen session ID becomes invalid after 15 minutes
+- Even if attacker gets new ID, fingerprint check still fails
+
+================================================================================
+SECTION 6: BLOCKED SESSION DETECTION
+================================================================================
+
+WHEN SESSIONS GET BLOCKED
+--------------------------------------------------------------------------------
+A session is added to the blocked_sessions table when:
+
+1. Fingerprint mismatch detected (hijacking attempt)
+2. Multiple privilege escalation attempts (>3 attempts)
+3. Suspicious activity patterns detected
+4. Manual admin block (security response)
+
+BLOCKING MECHANISM
+--------------------------------------------------------------------------------
+File: propagation_prevention.php
+Function: blockSession()
+Lines: 550-566
+
+Code:
+```php
+private function blockSession($session_id, $fingerprint, $reason) {
+    $expires_at = date('Y-m-d H:i:s', time() + 1800); // 30 minutes
+    
+    INSERT INTO blocked_sessions 
+    (session_id, user_id, fingerprint, ip_address, block_reason, expires_at) 
+    VALUES (?, ?, ?, ?, ?, ?)
+}
+```
+
+Database Schema:
+```sql
+CREATE TABLE blocked_sessions (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    session_id VARCHAR(255) NOT NULL,
+    user_id INT DEFAULT NULL,
+    fingerprint VARCHAR(255) NOT NULL,
+    ip_address VARCHAR(45) NOT NULL,
+    block_reason VARCHAR(255) NOT NULL,
+    blocked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP NOT NULL,
+    is_active TINYINT(1) DEFAULT 1
+);
+```
+
+CHECKING IF SESSION IS BLOCKED
+--------------------------------------------------------------------------------
+Function: isSessionBlocked()
+Lines: 571-588
+
+Called on:
+- Every session validation
+- Session initialization
+- After suspicious activity
+
+Code:
+```php
+private function isSessionBlocked($session_id) {
+    SELECT id FROM blocked_sessions 
+    WHERE session_id = ? 
+      AND is_active = 1 
+      AND expires_at > NOW()
+    
+    return (num_rows > 0); // true if blocked
+}
+```
+
+If blocked:
+- User is immediately logged out
+- Session is destroyed
+- Redirect to login with error message
+
+================================================================================
+SECTION 7: INCIDENT LOGGING & MONITORING
+================================================================================
+
+ALL HIJACKING ATTEMPTS ARE LOGGED
+--------------------------------------------------------------------------------
+File: propagation_prevention.php
+Function: logPropagationIncident()
+Lines: 532-548
+
+Every suspicious activity creates a record in propagation_incidents table:
+
+Database Schema:
+```sql
+CREATE TABLE propagation_incidents (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    incident_type ENUM('session_hijacking', 'privilege_escalation'),
+    user_id INT DEFAULT NULL,
+    session_id VARCHAR(255) NOT NULL,
+    original_fingerprint VARCHAR(255) NOT NULL,
+    detected_fingerprint VARCHAR(255) NOT NULL,
+    ip_address VARCHAR(45) NOT NULL,
+    user_agent TEXT NOT NULL,
+    additional_data JSON DEFAULT NULL,
+    detected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    blocked TINYINT(1) DEFAULT 1,
+    severity ENUM('low', 'medium', 'high', 'critical')
+);
+```
+
+WHAT GETS LOGGED:
+----------------
+1. **Incident Type**: session_hijacking or privilege_escalation
+2. **User ID**: Who was targeted
+3. **Session ID**: Compromised session identifier
+4. **Original Fingerprint**: Legitimate user's fingerprint
+5. **Detected Fingerprint**: Attacker's fingerprint
+6. **IP Address**: Where attack came from
+7. **User Agent**: Attacker's browser info
+8. **Additional Data**: JSON with extra context
+9. **Timestamp**: When it was detected
+10. **Severity**: Risk level (low/medium/high/critical)
+
+EXAMPLE LOG ENTRY:
+```json
+{
+    "incident_type": "session_hijacking",
+    "user_id": 5,
+    "session_id": "abc123def456",
+    "original_fingerprint": "a1b2c3d4",
+    "detected_fingerprint": "e5f6g7h8",
+    "ip_address": "192.168.1.50",
+    "user_agent": "Mozilla/5.0...",
+    "additional_data": {
+        "reason": "Fingerprint mismatch detected",
+        "session_age": 1234
+    },
+    "severity": "high"
+}
+```
+
+MONITORING DASHBOARD
+--------------------
+Admins can view incidents in:
+- propagation_incidents table (database)
+- Security logs (logs/security.log)
+- Admin dashboard security section
+
+Statistics Available:
+```php
+$stats = $propagation->getPropagationStats();
+// Returns:
+// - session_hijacking_24h: Count in last 24 hours
+// - privilege_escalation_24h: Count in last 24 hours
+// - blocked_sessions: Currently blocked
+// - active_sessions: Currently active
+```
+
+================================================================================
+SECTION 8: CONFIGURATION OPTIONS
+================================================================================
+
+File: config.php
+Lines: 68-73
+
+FINGERPRINT_MODE Setting
+--------------------------------------------------------------------------------
+Controls how strict the fingerprint validation is:
+
+```php
+define('FINGERPRINT_MODE', 'moderate'); // Options: strict, moderate, relaxed
+```
+
+| Mode     | Security Level | Multi-Device | IP Changes OK? | Use Case           |
+|----------|----------------|--------------|----------------|-------------------|
+| strict   | Highest        | No           | No             | High-security apps|
+| moderate | High           | No           | Yes            | Mobile-friendly   |
+| relaxed  | Medium         | Yes          | Yes            | Multi-device login|
+
+SESSION_LIFETIME Setting
+--------------------------------------------------------------------------------
+```php
+define('SESSION_LIFETIME', 28800); // 8 hours
+```
+
+Controls how long a session remains valid without activity.
+
+SESSION_ROTATION_INTERVAL Setting
+--------------------------------------------------------------------------------
+```php
+define('SESSION_ROTATION_INTERVAL', 1800); // 30 minutes
+```
+
+How often to automatically rotate session ID.
+
+ALLOW_CONCURRENT_SESSIONS Setting
+--------------------------------------------------------------------------------
+```php
+define('ALLOW_CONCURRENT_SESSIONS', true);
+```
+
+Whether to allow same user logged in from multiple devices.
+
+MAX_CONCURRENT_SESSIONS Setting
+--------------------------------------------------------------------------------
+```php
+define('MAX_CONCURRENT_SESSIONS', 3);
+```
+
+Maximum number of devices that can be logged in simultaneously.
+
+================================================================================
+SECTION 9: COMPLETE FLOW DIAGRAM
+================================================================================
+
+USER LOGIN FLOW WITH SESSION HIJACKING PREVENTION
+--------------------------------------------------------------------------------
+
+1. USER LOGS IN
+   ├─ index.php processes login credentials
+   ├─ Password verified
+   ├─ 2FA OTP sent (if enabled)
+   └─ User authenticated
+
+2. SESSION INITIALIZATION
+   ├─ security_manager.php::initializePropagationTracking()
+   ├─ Generate fingerprint from browser
+   ├─ Store in database (session_tracking table)
+   ├─ Store in session ($_SESSION['propagation_fingerprint'])
+   └─ Session ready
+
+3. USER ACCESSES PROTECTED PAGE
+   ├─ protectPage() called
+   ├─ Check if logged in
+   └─ validateSessionIntegrity() called
+
+4. SESSION VALIDATION (EVERY REQUEST)
+   ├─ Generate fresh fingerprint
+   ├─ Compare with stored fingerprint
+   │   ├─ MATCH → Continue
+   │   └─ MISMATCH → HIJACKING DETECTED
+   │       ├─ Log incident
+   │       ├─ Block session
+   │       ├─ Destroy session
+   │       └─ Redirect to login
+   ├─ Check if session blocked
+   ├─ Check timeout
+   ├─ Check rotation interval
+   └─ Update activity
+
+5. AUTOMATIC SESSION ROTATION (Every 15 min)
+   ├─ session_regenerate_id(true)
+   ├─ Update database with new session ID
+   └─ Keep fingerprint same
+
+6. SESSION EXPIRATION (After 1 hour)
+   ├─ Destroy session
+   └─ Redirect to login
+
+ATTACK SCENARIO: Session Hijacking Attempt
+--------------------------------------------------------------------------------
+
+1. LEGITIMATE USER
+   Device: Chrome on Windows
+   IP: 192.168.1.10
+   Fingerprint: a1b2c3d4
+   Session ID: abc123def456
+   Status: ✅ Logged in successfully
+
+2. ATTACKER STEALS SESSION ID
+   Method: Network sniffing / XSS / Malware
+   Stolen: abc123def456
+   Attacker Device: Firefox on Linux
+   Attacker IP: 192.168.1.50
+
+3. ATTACKER TRIES TO USE SESSION
+   ├─ Sets cookie: PHPSESSID=abc123def456
+   ├─ Visits: admin_dashboard.php
+   └─ protectPage() called
+
+4. VALIDATION CHECK
+   ├─ Generate fingerprint from attacker's browser
+   │   Device: Firefox on Linux
+   │   Fingerprint: e5f6g7h8 (DIFFERENT!)
+   │
+   ├─ Compare fingerprints:
+   │   Stored: a1b2c3d4
+   │   Current: e5f6g7h8
+   │   Result: MISMATCH! ⚠️
+   │
+   └─ HIJACKING DETECTED
+
+5. SYSTEM RESPONSE
+   ├─ Log incident to propagation_incidents
+   ├─ Block session (blocked_sessions table)
+   ├─ Invalidate ALL sessions for user
+   ├─ Destroy attacker's session
+   └─ Redirect to login with error
+
+6. LEGITIMATE USER
+   ├─ Session also invalidated (security measure)
+   ├─ Must log in again
+   └─ New session created with new fingerprint
+
+Result: ✅ Attack blocked, user protected
+
+================================================================================
+SECTION 10: CODE IMPLEMENTATION DETAILS
+================================================================================
+
+FILE STRUCTURE
+--------------------------------------------------------------------------------
+
+1. propagation_prevention.php (701 lines)
+   - Main class for session hijacking prevention
+   - Session fingerprinting
+   - Validation logic
+   - Incident logging
+
+2. session_protection.php (83 lines)
+   - Wrapper functions for protection
+   - protectPage(), quickProtect(), enforceRole()
+   - Called at top of every protected page
+
+3. security_manager.php (728 lines)
+   - Integrates propagation prevention
+   - Additional security features
+   - SQL injection prevention
+   - XSS prevention
+
+4. config.php (122 lines)
+   - Configuration settings
+   - Fingerprint mode selection
+   - Session lifetime settings
+
+KEY FUNCTIONS
+--------------------------------------------------------------------------------
+
+Function: initializeSessionTracking($user_id, $role)
+Purpose: Initialize session tracking on login
+Location: propagation_prevention.php, lines 194-231
+Called by: index.php after successful authentication
+
+Function: validateSessionIntegrity()
+Purpose: Validate session on every request
+Location: propagation_prevention.php, lines 236-283
+Called by: protectPage() on every protected page access
+
+Function: generateFingerprint()
+Purpose: Create unique browser/device fingerprint
+Location: propagation_prevention.php, lines 127-175
+Called by: initializeSessionTracking, validateSessionIntegrity
+
+Function: detectSessionHijackingPropagation(...)
+Purpose: Handle detected hijacking attempt
+Location: propagation_prevention.php, lines 288-316
+Called by: validateSessionIntegrity when fingerprint mismatch
+
+Function: rotateSessionId()
+Purpose: Regenerate session ID periodically
+Location: propagation_prevention.php, lines 321-344
+Called by: validateSessionIntegrity every 15 minutes
+
+Function: blockSession($session_id, $fingerprint, $reason)
+Purpose: Add session to blocklist
+Location: propagation_prevention.php, lines 550-566
+Called by: detectSessionHijackingPropagation
+
+Function: protectPage($required_role = null)
+Purpose: Protect page from unauthorized access
+Location: session_protection.php, lines 28-59
+Called by: Every protected PHP page at start
+
+DATABASE TABLES
+--------------------------------------------------------------------------------
+
+1. session_tracking
+   Purpose: Track active sessions
+   Key Fields:
+   - session_id: PHP session identifier
+   - user_id: User ID
+   - fingerprint: Browser fingerprint
+   - ip_address: User's IP
+   - last_activity: Last request time
+
+2. blocked_sessions
+   Purpose: Blacklist compromised sessions
+   Key Fields:
+   - session_id: Blocked session ID
+   - fingerprint: Blocked fingerprint
+   - block_reason: Why blocked
+   - expires_at: When block expires
+
+3. propagation_incidents
+   Purpose: Log security incidents
+   Key Fields:
+   - incident_type: session_hijacking or privilege_escalation
+   - original_fingerprint: Legitimate user's
+   - detected_fingerprint: Attacker's
+   - severity: Risk level
+
+SESSION VARIABLES
+--------------------------------------------------------------------------------
+
+Set during initialization:
+- $_SESSION['propagation_fingerprint']: Browser fingerprint
+- $_SESSION['propagation_created_at']: Session start time
+- $_SESSION['propagation_last_rotation']: Last rotation time
+- $_SESSION['propagation_user_id']: User ID
+- $_SESSION['propagation_role']: User role
+
+Used for validation on every request.
+
+SECURITY HEADERS
+--------------------------------------------------------------------------------
+File: config.php, lines 35-56
+
+```php
+ini_set('session.cookie_httponly', 1);  // Prevent JavaScript access
+ini_set('session.use_only_cookies', 1); // No URL parameters
+ini_set('session.cookie_secure', 1);    // HTTPS only (production)
+ini_set('session.cookie_samesite', 'Strict'); // CSRF protection
+```
+
+These prevent:
+- XSS attacks from stealing session cookies
+- Session fixation via URL parameters
+- Man-in-the-middle attacks (HTTPS only)
+- Cross-site request forgery
+
+================================================================================
+SUMMARY: HOW SESSION HIJACKING IS PREVENTED
+================================================================================
+
+🔒 LAYER 1: SESSION FINGERPRINTING
+   Every session has a unique fingerprint based on browser characteristics
+   that cannot be replicated by an attacker.
+
+🔒 LAYER 2: CONTINUOUS VALIDATION
+   Every single request validates the fingerprint. If it doesn't match,
+   the session is immediately invalidated.
+
+🔒 LAYER 3: AUTOMATIC ROTATION
+   Session ID changes every 15 minutes, making stolen IDs expire quickly.
+
+🔒 LAYER 4: SESSION BLOCKING
+   Compromised sessions are permanently blacklisted and cannot be reused.
+
+🔒 LAYER 5: TIMEOUT CONTROLS
+   Sessions expire after 1 hour, limiting window of opportunity.
+
+🔒 LAYER 6: COMPREHENSIVE LOGGING
+   All hijacking attempts are logged with full forensic details.
+
+🔒 LAYER 7: SECURITY HEADERS
+   HttpOnly, Secure, SameSite cookies prevent cookie theft.
+
+RESULT:
+-------
+Even if an attacker steals a session ID, they CANNOT use it because:
+1. Their browser will generate a different fingerprint
+2. The fingerprint mismatch will be detected immediately
+3. The session will be blocked and destroyed
+4. The incident will be logged
+5. The legitimate user will be forced to re-authenticate
+
+This creates a **defense-in-depth** strategy where multiple security layers
+work together to prevent session hijacking.
+
+================================================================================
+TESTING THE PROTECTION
+================================================================================
+
+TEST 1: Simulate Session Hijacking
+-----------------------------------
+1. Log in normally (Browser A)
+2. Copy session ID from cookie
+3. Open different browser (Browser B)
+4. Set same session ID in Browser B
+5. Try to access protected page
+6. Result: Access denied, session destroyed, incident logged
+
+TEST 2: IP Address Change
+--------------------------
+1. Log in from WiFi
+2. Switch to mobile data (IP changes)
+3. Continue using app
+4. Result:
+   - strict mode: Session invalid (IP mismatch)
+   - moderate mode: Session valid (IP not in fingerprint)
+   - relaxed mode: Session valid
+
+TEST 3: Session Timeout
+------------------------
+1. Log in
+2. Wait 1 hour without activity
+3. Try to access page
+4. Result: Session expired, redirect to login
+
+TEST 4: Session Rotation
+-------------------------
+1. Log in
+2. Note session ID
+3. Wait 15 minutes
+4. Make request
+5. Check session ID - should be different (rotated)
+
+================================================================================
+END OF DOCUMENTATION
+================================================================================
+
+For questions or support:
+- Review propagation_prevention.php for implementation details
+- Check session_protection.php for usage examples
+- See config.php for configuration options
+- Monitor propagation_incidents table for security events
+
+Last Updated: 2025-10-21
+Version: 1.0

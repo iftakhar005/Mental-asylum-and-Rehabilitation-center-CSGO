@@ -1,12 +1,5 @@
 <?php
-/**
- * PROPAGATION PREVENTION SYSTEM
- * Manual Implementation without External Libraries
- * 
- * Prevents:
- * 1. Session Hijacking Propagation
- * 2. Privilege Escalation Propagation
- */
+
 
 class PropagationPrevention {
     private $conn;
@@ -237,6 +230,11 @@ class PropagationPrevention {
     public function validateSessionIntegrity() {
         // Check if session is initialized
         if (!isset($_SESSION['propagation_fingerprint'])) {
+            // If user is logged in but propagation not initialized, initialize it now
+            if (isset($_SESSION['user_id']) && isset($_SESSION['role'])) {
+                $this->initializeSessionTracking($_SESSION['user_id'], $_SESSION['role']);
+                return true;
+            }
             return false;
         }
         

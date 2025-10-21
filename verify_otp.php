@@ -37,6 +37,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 unset($_SESSION['pending_username']);
                 unset($_SESSION['pending_role']);
                 
+                // Session is now fully authenticated - force session regeneration for security
+                session_regenerate_id(true);
+                
                 // Redirect to appropriate dashboard
                 $role = $_SESSION['role'];
                 switch ($role) {
@@ -380,7 +383,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </form>
         
         <div class="back-link">
-            <a href="index.php">
+            <a href="index.php?cancel_otp=1">
                 <i class="fas fa-arrow-left"></i> Back to Login
             </a>
         </div>

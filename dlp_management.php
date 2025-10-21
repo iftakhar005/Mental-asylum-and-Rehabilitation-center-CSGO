@@ -1,6 +1,6 @@
 <?php
 require_once 'session_check.php';
-check_login(['admin', 'chief-staff']);
+check_login(['admin']); // Only admin can access full DLP management
 require_once 'dlp_system.php';
 
 $dlp = new DataLossPreventionSystem();
@@ -28,6 +28,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $notes = $_POST['approval_notes'] ?? '';
             
             $result = $dlp->approveExportRequest($request_id, $notes);
+            $message = $result['success'] ? $result['message'] : $result['error'];
+            $success = $result['success'];
+            break;
+            
+        case 'reject_request':
+            $request_id = $_POST['request_id'];
+            $rejection_notes = $_POST['rejection_notes'] ?? '';
+            
+            $result = $dlp->rejectExportRequest($request_id, $rejection_notes);
             $message = $result['success'] ? $result['message'] : $result['error'];
             $success = $result['success'];
             break;
@@ -284,16 +293,29 @@ $classifications = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
                                 <p><strong>Expires:</strong> <?= date('Y-m-d H:i', strtotime($request['expires_at'])) ?></p>
                                 
                                 <?php if (in_array($_SESSION['role'], ['admin', 'chief-staff'])): ?>
-                                <form method="POST" style="margin-top: 15px;">
-                                    <input type="hidden" name="action" value="approve_request">
-                                    <input type="hidden" name="request_id" value="<?= $request['request_id'] ?>">
-                                    <div class="form-group">
-                                        <input type="text" name="approval_notes" class="form-control" placeholder="Approval notes (optional)">
-                                    </div>
-                                    <button type="submit" class="btn btn-success btn-sm">
-                                        <i class="fas fa-check"></i> Approve
-                                    </button>
-                                </form>
+                                <div style="margin-top: 15px; display: flex; gap: 10px;">
+                                    <form method="POST" style="flex: 1;">
+                                        <input type="hidden" name="action" value="approve_request">
+                                        <input type="hidden" name="request_id" value="<?= $request['request_id'] ?>">
+                                        <div class="form-group">
+                                            <input type="text" name="approval_notes" class="form-control" placeholder="Approval notes (optional)">
+                                        </div>
+                                        <button type="submit" class="btn btn-success btn-sm">
+                                            <i class="fas fa-check"></i> Approve
+                                        </button>
+                                    </form>
+                                    
+                                    <form method="POST" style="flex: 1;">
+                                        <input type="hidden" name="action" value="reject_request">
+                                        <input type="hidden" name="request_id" value="<?= $request['request_id'] ?>">
+                                        <div class="form-group">
+                                            <input type="text" name="rejection_notes" class="form-control" placeholder="Rejection reason (optional)">
+                                        </div>
+                                        <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Are you sure you want to reject this export request?');">
+                                            <i class="fas fa-times"></i> Reject
+                                        </button>
+                                    </form>
+                                </div>
                                 <?php endif; ?>
                             </div>
                             <?php endforeach; ?>

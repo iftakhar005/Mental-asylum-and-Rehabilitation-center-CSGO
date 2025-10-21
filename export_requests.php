@@ -1,367 +1,459 @@
 <?php
 require_once 'session_check.php';
-check_login(['doctor', 'therapist', 'nurse', 'receptionist', 'staff']);
+check_login(); // All authenticated users can request exports
 require_once 'dlp_system.php';
 
 $dlp = new DataLossPreventionSystem();
 $message = '';
 $success = false;
 
-// No need for download success message handling since file downloads directly
-
-// Handle form submissions
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $action = $_POST['action'] ?? '';
+// Handle export request submission
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['submit_request'])) {
+    $export_type = $_POST['export_type'];
+    $data_tables = explode(',', trim($_POST['data_tables']));
+    $data_filters = json_decode($_POST['data_filters'] ?: '{}', true);
+    $justification = $_POST['justification'];
     
-    if ($action === 'request_export') {
-        $export_type = $_POST['export_type'];
-        $data_tables = explode(',', trim($_POST['data_tables']));
-        $data_filters = json_decode($_POST['data_filters'] ?: '{}', true);
-        $justification = $_POST['justification'];
+    $result = $dlp->requestBulkExportApproval($export_type, $data_tables, $data_filters, $justification);
+    
+    if ($result['success']) {
+        if ($result['auto_approved']) {
+            $message = "✅ " . $result['message'] . " <br><strong>Request ID:</strong> " . $result['request_id'] . "<br><a href='secure_export.php?request_id=" . urlencode($result['request_id']) . "' style='color: #007bff; font-weight: bold;'>Click here to download now →</a>";
+        } else {
+            $message = "📋 " . $result['message'] . " <br><strong>Request ID:</strong> " . $result['request_id'];
+        }
+    } else {
+        $message = $result['error'];
+    }
+    $success = $result['success'];
+}
+
+// Handle export request rejection (admin/chief-staff only)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reject_request'])) {
+    if (in_array($_SESSION['role'], ['admin', 'chief-staff'])) {
+        $request_id = $_POST['request_id'];
+        $rejection_notes = $_POST['rejection_notes'] ?? 'Rejected by ' . $_SESSION['username'];
         
-        $result = $dlp->requestBulkExportApproval($export_type, $data_tables, $data_filters, $justification);
-        $message = $result['success'] ? "Export request submitted successfully. Request ID: " . $result['request_id'] : $result['error'];
+        $result = $dlp->rejectExportRequest($request_id, $rejection_notes);
+        $message = $result['success'] ? '✅ ' . $result['message'] : '❌ ' . $result['error'];
         $success = $result['success'];
+    } else {
+        $message = '❌ You do not have permission to reject export requests.';
+        $success = false;
     }
 }
 
-// Get user's own requests
+// Get user's export requests
 $user_requests = $dlp->getUserExportRequests();
-$current_role = $_SESSION['role'];
-$username = $_SESSION['username'] ?? 'User';
-
-// Get role-specific table suggestions
-$role_tables = [
-    'doctor' => ['patients', 'appointments', 'treatments', 'medical_records'],
-    'therapist' => ['patients', 'appointments', 'treatments', 'therapy_sessions'],
-    'nurse' => ['patients', 'appointments', 'medical_records', 'medications'],
-    'receptionist' => ['patients', 'appointments', 'staff'],
-    'staff' => ['patients', 'appointments']
-];
-
-$suggested_tables = $role_tables[$current_role] ?? ['patients'];
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Export Requests - <?= ucfirst($current_role) ?></title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <title>Request Data Export</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        :root {
-            --primary-color: #3498db;
-            --success-color: #27ae60;
-            --warning-color: #f39c12;
-            --danger-color: #e74c3c;
-            --border-color: #ddd;
-        }
-        
         * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f5f6fa; }
         
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: #f5f7fa;
-            color: #333;
-            line-height: 1.6;
-        }
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
         
         .header {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
-            padding: 2rem 0;
-            text-align: center;
-            margin-bottom: 2rem;
+            padding: 30px;
+            border-radius: 15px;
+            margin-bottom: 30px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
         }
         
-        .header h1 { font-size: 2.5rem; margin-bottom: 0.5rem; }
-        .header p { font-size: 1.1rem; opacity: 0.9; }
+        .header h1 { font-size: 2rem; margin-bottom: 10px; }
+        .header p { opacity: 0.9; }
         
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 0 20px;
+        .card {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-bottom: 25px;
+            overflow: hidden;
         }
         
-        .back-nav {
-            margin-bottom: 2rem;
+        .card-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            font-size: 1.3rem;
+            font-weight: 600;
         }
         
-        .back-nav a {
-            color: var(--primary-color);
-            text-decoration: none;
-            font-weight: 500;
+        .card-body { padding: 30px; }
+        
+        .form-group { margin-bottom: 20px; }
+        
+        .form-label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+        
+        .form-control {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: all 0.3s;
+        }
+        
+        .form-control:focus {
+            border-color: #667eea;
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        textarea.form-control { resize: vertical; min-height: 100px; }
+        
+        .btn {
+            padding: 12px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
             display: inline-flex;
             align-items: center;
-            gap: 8px;
-            transition: color 0.3s;
+            gap: 10px;
         }
         
-        .back-nav a:hover { color: var(--success-color); }
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
+        }
+        
+        .btn-secondary {
+            background: #95a5a6;
+            color: white;
+        }
         
         .alert {
             padding: 15px 20px;
             border-radius: 8px;
             margin-bottom: 20px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
         }
         
         .alert-success {
             background: #d4edda;
             color: #155724;
-            border: 1px solid #c3e6cb;
+            border-left: 4px solid #28a745;
         }
         
         .alert-error {
             background: #f8d7da;
             color: #721c24;
-            border: 1px solid #f5c6cb;
+            border-left: 4px solid #dc3545;
         }
         
-        .card {
-            background: white;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            margin-bottom: 2rem;
-            overflow: hidden;
-        }
-        
-        .card-header {
-            background: var(--primary-color);
-            color: white;
-            padding: 1.5rem;
-            font-size: 1.2rem;
-            font-weight: 600;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        
-        .card-body { padding: 2rem; }
-        
-        .form-group { margin-bottom: 1.5rem; }
-        
-        .form-label {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: 500;
-            color: #555;
-        }
-        
-        .form-control {
-            width: 100%;
-            padding: 12px 16px;
-            border: 2px solid var(--border-color);
-            border-radius: 6px;
-            font-size: 1rem;
-            transition: border-color 0.3s;
-        }
-        
-        .form-control:focus {
-            outline: none;
-            border-color: var(--primary-color);
-        }
-        
-        .btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            padding: 12px 24px;
-            border: none;
-            border-radius: 6px;
-            font-size: 1rem;
-            font-weight: 500;
-            cursor: pointer;
-            transition: all 0.3s;
-            text-decoration: none;
-        }
-        
-        .btn-primary {
-            background: var(--primary-color);
-            color: white;
-        }
-        
-        .btn-primary:hover {
-            background: #2980b9;
-            transform: translateY(-2px);
-        }
-        
-        .table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 1rem;
-        }
-        
-        .table th, .table td {
-            padding: 12px;
-            text-align: left;
-            border-bottom: 1px solid var(--border-color);
-        }
-        
-        .table th {
+        .request-item {
             background: #f8f9fa;
-            font-weight: 600;
+            border: 2px solid #dee2e6;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 15px;
         }
         
-        .table tr:hover { background: #f8f9fa; }
+        .request-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        
+        .request-id {
+            font-weight: bold;
+            color: #667eea;
+            font-size: 1.1rem;
+        }
         
         .status-badge {
-            display: inline-block;
-            padding: 4px 12px;
+            padding: 6px 15px;
             border-radius: 20px;
-            font-size: 0.8rem;
-            font-weight: 500;
+            font-size: 0.85rem;
+            font-weight: bold;
             text-transform: uppercase;
         }
         
         .status-pending { background: #fff3cd; color: #856404; }
         .status-approved { background: #d4edda; color: #155724; }
+        .status-denied { background: #f8d7da; color: #721c24; }
         .status-rejected { background: #f8d7da; color: #721c24; }
+        .status-expired { background: #e2e3e5; color: #383d41; }
         
-        .suggestions {
-            background: #e3f2fd;
-            border: 1px solid #bbdefb;
-            border-radius: 6px;
-            padding: 10px;
-            margin-top: 8px;
-            font-size: 0.9rem;
-            color: #1565c0;
+        .classification-badge {
+            padding: 4px 12px;
+            border-radius: 15px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
         }
         
-        .suggestions strong { color: #0d47a1; }
+        .class-public { background: #d1ecf1; color: #0c5460; }
+        .class-internal { background: #fff3cd; color: #856404; }
+        .class-confidential { background: #f8d7da; color: #721c24; }
+        .class-restricted { background: #721c24; color: white; }
         
-        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; }
+        .info-row {
+            display: grid;
+            grid-template-columns: 150px 1fr;
+            padding: 5px 0;
+            border-bottom: 1px solid #e9ecef;
+        }
         
-        @media (max-width: 768px) {
-            .grid-2 { grid-template-columns: 1fr; }
-            .header h1 { font-size: 2rem; }
+        .info-label { font-weight: 600; color: #6c757d; }
+        .info-value { color: #495057; }
+        
+        .nav-bar {
+            background: white;
+            padding: 15px 30px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            margin-bottom: 20px;
+        }
+        
+        .nav-bar a {
+            color: #667eea;
+            text-decoration: none;
+            margin-right: 20px;
+            font-weight: 500;
+        }
+        
+        .nav-bar a:hover { color: #764ba2; }
+        
+        .help-text {
+            background: #e7f3ff;
+            border-left: 4px solid #2196f3;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+        }
+        
+        .help-text h4 {
+            color: #1976d2;
+            margin-bottom: 10px;
+        }
+        
+        .help-text ul {
+            margin-left: 20px;
+            line-height: 1.8;
         }
     </style>
 </head>
 <body>
-    <div class="header">
-        <div class="container">
-            <h1><i class="fas fa-shield-alt"></i> Export Requests</h1>
-            <p>Submit and track your data export requests - <?= ucfirst($current_role) ?> Dashboard</p>
-        </div>
+    <div class="nav-bar">
+        <a href="<?php echo $_SESSION['role'] === 'admin' ? 'admin_dashboard.php' : ($_SESSION['role'] === 'chief-staff' ? 'chief_staff_dashboard.php' : 'staff_dashboard.php'); ?>">
+            <i class="fas fa-arrow-left"></i> Back to Dashboard
+        </a>
+        <?php if ($_SESSION['role'] === 'admin'): ?>
+            <a href="dlp_management.php">DLP Management</a>
+        <?php endif; ?>
+        <a href="logout.php" style="float: right; color: #dc3545;">
+            <i class="fas fa-sign-out-alt"></i> Logout
+        </a>
     </div>
-    
+
     <div class="container">
-        <div class="back-nav">
-            <a href="<?= strtolower($current_role) ?>_dashboard.php">
-                <i class="fas fa-arrow-left"></i> Back to Dashboard
-            </a>
+        <div class="header">
+            <h1><i class="fas fa-file-export"></i> Request Data Export</h1>
+            <p>Submit a request to export sensitive or bulk data with proper justification</p>
         </div>
-        
+
         <?php if ($message): ?>
-        <div class="alert <?= $success ? 'alert-success' : 'alert-error' ?>">
-            <i class="fas <?= $success ? 'fa-check-circle' : 'fa-exclamation-triangle' ?>"></i>
-            <?= htmlspecialchars($message) ?>
+        <div class="alert <?php echo $success ? 'alert-success' : 'alert-error'; ?>">
+            <?php echo htmlspecialchars($message); ?>
         </div>
         <?php endif; ?>
-        
-        <div class="grid-2">
-            <!-- Submit Request Form -->
-            <div class="card">
-                <div class="card-header">
-                    <i class="fas fa-paper-plane"></i> Submit New Export Request
-                </div>
-                <div class="card-body">
-                    <form method="POST">
-                        <input type="hidden" name="action" value="request_export">
-                        
-                        <div class="form-group">
-                            <label class="form-label">Export Type</label>
-                            <select name="export_type" class="form-control" required>
-                                <option value="">Select export type</option>
-                                <option value="patient_report">Patient Report</option>
-                                <option value="appointment_data">Appointment Data</option>
-                                <option value="treatment_records">Treatment Records</option>
-                                <option value="custom_report">Custom Report</option>
-                            </select>
+
+        <div class="help-text">
+            <h4><i class="fas fa-info-circle"></i> How Data Export Works (Auto-Approval System)</h4>
+            <ul>
+                <li><strong>PUBLIC</strong> data → <span style="color: #28a745; font-weight: bold;">✅ AUTO-APPROVED instantly</span> for all users</li>
+                <li><strong>INTERNAL</strong> data → <span style="color: #28a745; font-weight: bold;">✅ AUTO-APPROVED instantly</span> for authenticated staff (logged automatically)</li>
+                <li><strong>CONFIDENTIAL</strong> data → <span style="color: #ffc107;">📋 Requires approval</span> from supervisor or admin (auto-approved for chief-staff/admin)</li>
+                <li><strong>RESTRICTED</strong> data → <span style="color: #dc3545;">🔒 Requires admin approval only</span> (auto-approved for admin)</li>
+            </ul>
+            <p style="margin-top: 10px; padding: 10px; background: #e7f3ff; border-radius: 5px;">
+                <strong>Note:</strong> Most data exports for staff will be approved automatically! Only highly sensitive data requires manual approval.
+            </p>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <i class="fas fa-paper-plane"></i> New Export Request
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <div class="form-group">
+                        <label class="form-label">
+                            <i class="fas fa-file-alt"></i> Export Type
+                        </label>
+                        <select name="export_type" class="form-control" required>
+                            <option value="">Select export type...</option>
+                            <option value="staff_data">Staff Data Export</option>
+                            <option value="patient_records">Patient Records</option>
+                            <option value="appointment_data">Appointment Data</option>
+                            <option value="treatment_records">Treatment Records</option>
+                            <option value="system_logs">System Logs</option>
+                            <option value="financial_data">Financial Data</option>
+                            <option value="custom">Custom Export</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">
+                            <i class="fas fa-database"></i> Data Tables (comma-separated)
+                        </label>
+                        <input 
+                            type="text" 
+                            name="data_tables" 
+                            class="form-control" 
+                            placeholder="e.g., staff, appointments, patients"
+                            required
+                        >
+                        <small style="color: #6c757d;">Enter database table names separated by commas</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">
+                            <i class="fas fa-filter"></i> Data Filters (JSON format) - Optional
+                        </label>
+                        <textarea 
+                            name="data_filters" 
+                            class="form-control" 
+                            placeholder='{"role": "doctor", "status": "active", "date_from": "2025-01-01"}'
+                        ></textarea>
+                        <small style="color: #6c757d;">Optional: Use JSON format to filter exported data</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">
+                            <i class="fas fa-comment-dots"></i> Justification <span style="color: red;">*</span>
+                        </label>
+                        <textarea 
+                            name="justification" 
+                            class="form-control" 
+                            placeholder="Provide detailed justification for this export request...&#10;&#10;Example:&#10;- Purpose: Monthly staff performance report&#10;- Requestor: HR Department&#10;- Data usage: Internal review and compliance audit&#10;- Retention: Will be deleted after 30 days"
+                            required
+                        ></textarea>
+                        <small style="color: #6c757d;">Provide a clear business justification for requesting this data export</small>
+                    </div>
+
+                    <button type="submit" name="submit_request" class="btn btn-primary">
+                        <i class="fas fa-paper-plane"></i> Submit Export Request
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <i class="fas fa-history"></i> My Export Requests
+            </div>
+            <div class="card-body">
+                <?php if (empty($user_requests)): ?>
+                    <p style="text-align: center; color: #6c757d; padding: 30px;">
+                        <i class="fas fa-inbox" style="font-size: 3rem; display: block; margin-bottom: 15px; opacity: 0.3;"></i>
+                        No export requests found. Submit your first request above!
+                    </p>
+                <?php else: ?>
+                    <?php foreach ($user_requests as $req): ?>
+                    <div class="request-item">
+                        <div class="request-header">
+                            <span class="request-id"><?php echo htmlspecialchars($req['request_id']); ?></span>
+                            <span class="status-badge status-<?php echo strtolower($req['status']); ?>">
+                                <?php echo ucfirst($req['status']); ?>
+                            </span>
                         </div>
-                        
-                        <div class="form-group">
-                            <label class="form-label">Data Tables</label>
-                            <input type="text" name="data_tables" class="form-control" 
-                                   placeholder="e.g., patients, appointments" required>
-                            <div class="suggestions">
-                                <strong>Suggested for <?= ucfirst($current_role) ?>:</strong> 
-                                <?= implode(', ', $suggested_tables) ?>
+
+                        <div class="info-row">
+                            <div class="info-label">Export Type:</div>
+                            <div class="info-value"><?php echo htmlspecialchars($req['export_type']); ?></div>
+                        </div>
+
+                        <div class="info-row">
+                            <div class="info-label">Classification:</div>
+                            <div class="info-value">
+                                <span class="classification-badge class-<?php echo strtolower($req['classification_level']); ?>">
+                                    <?php echo strtoupper($req['classification_level']); ?>
+                                </span>
                             </div>
                         </div>
-                        
-                        <div class="form-group">
-                            <label class="form-label">Data Filters (Optional)</label>
-                            <textarea name="data_filters" class="form-control" rows="3" 
-                                      placeholder='{"status": "active", "date_range": "2024-01-01 to 2024-12-31"}'></textarea>
+
+                        <div class="info-row">
+                            <div class="info-label">Tables:</div>
+                            <div class="info-value"><?php echo htmlspecialchars($req['data_tables']); ?></div>
+                        </div>
+
+                        <div class="info-row">
+                            <div class="info-label">Justification:</div>
+                            <div class="info-value"><?php echo htmlspecialchars($req['justification']); ?></div>
+                        </div>
+
+                        <div class="info-row">
+                            <div class="info-label">Requested:</div>
+                            <div class="info-value"><?php echo date('Y-m-d H:i', strtotime($req['requested_at'])); ?></div>
+                        </div>
+
+                        <?php if ($req['status'] === 'pending'): ?>
+                        <div class="info-row">
+                            <div class="info-label">Expires:</div>
+                            <div class="info-value"><?php echo date('Y-m-d H:i', strtotime($req['expires_at'])); ?></div>
                         </div>
                         
-                        <div class="form-group">
-                            <label class="form-label">Justification *</label>
-                            <textarea name="justification" class="form-control" rows="4" 
-                                      placeholder="Provide detailed justification for this export request. Include the purpose, who will access the data, and how it will be used..." required></textarea>
+                        <?php if (in_array($_SESSION['role'], ['admin', 'chief-staff'])): ?>
+                        <div style="margin-top: 15px; padding-top: 15px; border-top: 2px solid #ffc107;">
+                            <form method="POST" style="display: inline-block; margin-right: 10px;" onsubmit="return confirm('Are you sure you want to reject this export request?');">
+                                <input type="hidden" name="reject_request" value="1">
+                                <input type="hidden" name="request_id" value="<?php echo htmlspecialchars($req['request_id']); ?>">
+                                <input type="text" name="rejection_notes" placeholder="Rejection reason (optional)" style="padding: 8px; border: 1px solid #ddd; border-radius: 5px; margin-right: 10px; width: 300px;">
+                                <button type="submit" class="btn btn-secondary" style="background: #dc3545; padding: 10px 20px;">
+                                    <i class="fas fa-times"></i> Reject Request
+                                </button>
+                            </form>
                         </div>
+                        <?php endif; ?>
+                        <?php endif; ?>
+
+                        <?php if ($req['status'] === 'approved'): ?>
+                        <div style="margin-top: 15px; padding-top: 15px; border-top: 2px solid #28a745;">
+                            <a href="secure_export.php?request_id=<?php echo urlencode($req['request_id']); ?>" class="btn btn-primary">
+                                <i class="fas fa-download"></i> Download Export
+                            </a>
+                        </div>
+                        <?php endif; ?>
                         
-                        <button type="submit" class="btn btn-primary">
-                            <i class="fas fa-paper-plane"></i> Submit Request
-                        </button>
-                    </form>
-                </div>
-            </div>
-            
-            <!-- My Requests -->
-            <div class="card">
-                <div class="card-header">
-                    <i class="fas fa-list"></i> My Export Requests
-                </div>
-                <div class="card-body">
-                    <?php if (empty($user_requests)): ?>
-                    <p style="text-align: center; color: #666; margin: 2rem 0;">
-                        <i class="fas fa-inbox" style="font-size: 3rem; opacity: 0.3; display: block; margin-bottom: 1rem;"></i>
-                        No export requests yet.
-                    </p>
-                    <?php else: ?>
-                    <table class="table">
-                        <thead>
-                            <tr>
-                                <th>Request ID</th>
-                                <th>Export Type</th>
-                                <th>Status</th>
-                                <th>Requested</th>
-                                <th>Action</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach ($user_requests as $request): ?>
-                            <tr>
-                                <td><?= htmlspecialchars($request['request_id']) ?></td>
-                                <td><?= htmlspecialchars($request['export_type']) ?></td>
-                                <td>
-                                    <span class="status-badge status-<?= $request['status'] ?>">
-                                        <?= ucfirst($request['status']) ?>
-                                    </span>
-                                </td>
-                                <td><?= date('M j, Y', strtotime($request['requested_at'])) ?></td>
-                                <td>
-                                    <?php if ($request['status'] === 'approved'): ?>
-                                    <a href="secure_export.php?request_id=<?= $request['request_id'] ?>" 
-                                       class="btn btn-primary" style="padding: 4px 8px; font-size: 0.8rem;">
-                                        <i class="fas fa-download"></i> Download
-                                    </a>
-                                    <?php else: ?>
-                                    <span style="color: #666; font-size: 0.9rem;">Pending</span>
-                                    <?php endif; ?>
-                                </td>
-                            </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                    <?php endif; ?>
-                </div>
+                        <?php if ($req['status'] === 'rejected'): ?>
+                        <div style="margin-top: 15px; padding: 10px; background: #f8d7da; border-radius: 5px; border-left: 4px solid #dc3545;">
+                            <strong style="color: #721c24;">❌ Request Rejected</strong>
+                            <?php if (!empty($req['approval_notes'])): ?>
+                            <p style="margin: 5px 0 0 0; color: #721c24;">Reason: <?php echo htmlspecialchars($req['approval_notes']); ?></p>
+                            <?php endif; ?>
+                        </div>
+                        <?php endif; ?>
+
+                        <?php if (!empty($req['approval_notes'])): ?>
+                        <div style="margin-top: 15px; padding: 10px; background: #f1f3f5; border-radius: 5px;">
+                            <strong>Admin Notes:</strong> <?php echo htmlspecialchars($req['approval_notes']); ?>
+                        </div>
+                        <?php endif; ?>
+                    </div>
+                    <?php endforeach; ?>
+                <?php endif; ?>
             </div>
         </div>
     </div>

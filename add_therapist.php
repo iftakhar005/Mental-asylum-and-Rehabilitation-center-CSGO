@@ -122,8 +122,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             throw new Exception("Staff ID already exists. Please try again.");
         }
         
-        // Insert into users table first (with email)
-        $sql_user = "INSERT INTO users (username, password_hash, email, role, first_name, last_name, contact_number, status) VALUES ('$staff_id', '$hashed_password', '$email', 'therapist', '$full_name', '', '$phone', 'active')";
+        // Insert into users table first (with email and 2FA setting)
+        $sql_user = "INSERT INTO users (username, password_hash, email, role, first_name, last_name, contact_number, status, two_factor_enabled) VALUES ('$staff_id', '$hashed_password', '$email', 'therapist', '$full_name', '', '$phone', 'active', $enable_2fa)";
         
         if (!$conn->query($sql_user)) {
             throw new Exception("Error creating user account: " . $conn->error);

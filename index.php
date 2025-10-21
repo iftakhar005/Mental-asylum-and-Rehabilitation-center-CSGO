@@ -10,6 +10,19 @@ if (session_status() === PHP_SESSION_NONE) {
 // Include 2FA functions
 require_once 'otp_functions.php';
 
+// Handle OTP cancellation - clear all pending session variables
+if (isset($_GET['cancel_otp']) && $_GET['cancel_otp'] == '1') {
+    unset($_SESSION['otp_verification_pending']);
+    unset($_SESSION['otp_email']);
+    unset($_SESSION['pending_user_id']);
+    unset($_SESSION['pending_staff_id']);
+    unset($_SESSION['pending_username']);
+    unset($_SESSION['pending_role']);
+    // Redirect to clean URL
+    header('Location: index.php');
+    exit();
+}
+
 $login_error = '';
 $show_captcha = false;
 $captcha_question = '';
@@ -307,7 +320,9 @@ function processLogin($email, $password, $remember) {
                             header('Location: parent_dashboard.php');
                             break;
                         case 'general_user':
-                            header('Location: guser.php');
+                        case 'nurse':
+                        case 'staff':
+                            header('Location: staff_dashboard.php');
                             break;
                         default:
                             header('Location: staff_dashboard.php');

@@ -90,8 +90,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $temp_password = generateSecurePassword(12);
     $hashed_password = password_hash($temp_password, PASSWORD_DEFAULT);
     $success = false;
-    // Insert into users table first
-    $sql_user = "INSERT INTO users (username, password_hash, email, role, first_name, last_name, contact_number, status) VALUES ('$staff_id', '$hashed_password', '$email', 'receptionist', '$firstName', '$lastName', '$phone', 'active')";
+    // Insert into users table first (with 2FA setting)
+    $sql_user = "INSERT INTO users (username, password_hash, email, role, first_name, last_name, contact_number, status, two_factor_enabled) VALUES ('$staff_id', '$hashed_password', '$email', 'receptionist', '$firstName', '$lastName', '$phone', 'active', $enable_2fa)";
     if ($conn->query($sql_user)) {
         $user_id = $conn->insert_id;
         // Now insert into staff table using $user_id

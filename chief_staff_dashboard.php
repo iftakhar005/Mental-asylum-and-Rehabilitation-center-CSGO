@@ -792,7 +792,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <i class="fas fa-utensils"></i>
                     <span>Meal Plans</span>
                 </a>
-                <a href="dlp_management.php" class="menu-item">
+                <a href="export_requests.php" class="menu-item">
                     <i class="fas fa-shield-alt"></i>
                     <span>Export Requests</span>
                 </a>

@@ -1,0 +1,1400 @@
+================================================================================
+    SECURITY FUNCTIONS DOCUMENTATION
+    Mental Asylum and Rehabilitation Center System
+================================================================================
+    Generated: 2025-10-21
+    System: MindCare Mental Health System
+    Security Features: 2FA Authentication & Data Audit Trail
+================================================================================
+
+TABLE OF CONTENTS
+================================================================================
+1. TWO-FACTOR AUTHENTICATION (2FA) SYSTEM
+   1.1 Overview
+   1.2 Files Involved
+   1.3 Database Schema
+   1.4 Authentication Flow
+   1.5 Key Functions & Code Lines
+
+2. DATA AUDIT TRAIL SYSTEM
+   2.1 Overview
+   2.2 Files Involved
+   2.3 Database Schema
+   2.4 Audit Flow
+   2.5 Key Functions & Code Lines
+
+================================================================================
+SECTION 1: TWO-FACTOR AUTHENTICATION (2FA) SYSTEM
+================================================================================
+
+1.1 OVERVIEW
+--------------------------------------------------------------------------------
+The 2FA system provides enhanced security by requiring users to verify their
+identity through a One-Time Password (OTP) sent to their email after successful
+password authentication. The system uses email-based OTP delivery with a 
+10-minute expiration window.
+
+Key Features:
+- 6-digit cryptographically secure OTP generation
+- Email delivery via SMTP (Gmail) or PHP mail() fallback
+- 10-minute OTP expiration
+- OTP reuse prevention
+- Session-based pending authentication state
+- Automatic OTP cleanup
+
+================================================================================
+1.2 FILES INVOLVED
+================================================================================
+
+PRIMARY FILES:
+--------------
+1. otp_functions.php (643 lines)
+   - Core 2FA functions for OTP generation, storage, verification, and email
+   - Location: Root directory
+
+2. index.php (816 lines)
+   - Login page with 2FA integration
+   - Initial authentication checkpoint
+   - Location: Root directory
+
+3. verify_otp.php (479 lines)
+   - OTP verification interface
+   - Handles OTP validation and session completion
+   - Location: Root directory
+
+4. phpmailer_config.php (53 lines)
+   - SMTP email configuration
+   - Gmail integration settings
+   - Location: Root directory
+
+SUPPORTING FILES:
+-----------------
+5. db.php
+   - Database connection management
+
+6. security_manager.php (728 lines)
+   - Security validation and input sanitization
+   - SQL injection prevention
+   - Failed login tracking
+
+================================================================================
+1.3 DATABASE SCHEMA
+================================================================================
+
+TABLE: otp_codes
+--------------------------------------------------------------------------------
+CREATE TABLE otp_codes (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    email VARCHAR(255) NOT NULL,
+    otp_code VARCHAR(6) NOT NULL,
+    expires_at DATETIME NOT NULL,
+    is_used TINYINT(1) DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_email_otp (email, otp_code),
+    INDEX idx_user_id (user_id),
+    INDEX idx_expires_at (expires_at)
+);
+
+TABLE: users
+--------------------------------------------------------------------------------
+Fields related to 2FA:
+- two_factor_enabled TINYINT(1) DEFAULT 0
+- two_factor_secret VARCHAR(255) DEFAULT NULL
+
+TABLE: staff
+--------------------------------------------------------------------------------
+Fields related to 2FA:
+- two_factor_enabled TINYINT(1) DEFAULT 0
+- user_id INT (links to users table)
+
+================================================================================
+1.4 AUTHENTICATION FLOW
+================================================================================
+
+STEP 1: USER INITIATES LOGIN
+--------------------------------------------------------------------------------
+File: index.php
+Lines: 78-134 (POST request handling)
+
+1. User submits email and password
+2. Security validation checks:
+   - Client not banned (lines 82-87)
+   - Input validation (lines 89-98)
+   - SQL injection detection (lines 101-105)
+   - CAPTCHA validation if required (lines 108-117)
+3. Call processLogin() function (line 119 or 123)
+
+STEP 2: CREDENTIAL VERIFICATION
+--------------------------------------------------------------------------------
+File: index.php
+Function: processLogin()
+Lines: 138-379
+
+1. Query staff table for user credentials (lines 146-150)
+2. Verify password hash (line 153)
+3. Clear failed login attempts on success (line 155)
+4. Lookup user_id and two_factor_enabled status (lines 158-163)
+
+STEP 3: 2FA CHECK & OTP GENERATION
+--------------------------------------------------------------------------------
+File: index.php
+Lines: 165-191 (for staff) and 249-275 (for admin users)
+
+IF 2FA IS ENABLED:
+1. Generate 6-digit OTP using generateOTP() (line 168)
+   - Location: otp_functions.php, lines 14-26
+   - Uses cryptographically secure random_int()
+
+2. Store OTP in database using storeOTP() (line 170)
+   - Location: otp_functions.php, lines 36-67
+   - Parameters: user_id, email, otp, expiry_minutes (10)
+   - Deletes old unused OTPs (lines 42-45)
+   - Sets expiration time: current_time + 10 minutes (line 48)
+   - Inserts new OTP record (lines 53-58)
+
+3. Send OTP via email using sendOTPEmail() (line 171)
+   - Location: otp_functions.php, lines 318-574
+   - Checks SMTP configuration (lines 321-330)
+   - Falls back to sendOTPEmailSimple() if SMTP not configured (line 332)
+   - Creates HTML email with OTP code (lines 344-414)
+   - Establishes SMTP connection (lines 432-437)
+   - Authenticates with Gmail SMTP (lines 458-518)
+   - Sends email (lines 527-542)
+
+4. Store pending session data (lines 173-177)
+   - $_SESSION['otp_verification_pending'] = true
+   - $_SESSION['otp_email'] = email
+   - $_SESSION['pending_user_id'] = user_id
+   - $_SESSION['pending_staff_id'] = staff_id
+   - $_SESSION['pending_username'] = username
+   - $_SESSION['pending_role'] = role
+
+5. Redirect to verify_otp.php (lines 180-181)
+
+IF 2FA IS NOT ENABLED:
+1. Complete login immediately (lines 195-233)
+2. Set session variables
+3. Redirect to role-based dashboard
+
+STEP 4: OTP VERIFICATION
+--------------------------------------------------------------------------------
+File: verify_otp.php
+Lines: 1-479
+
+A. PAGE LOAD (lines 6-12)
+   - Check if otp_verification_pending session exists
+   - Redirect to index.php if not in OTP verification state
+
+B. OTP SUBMISSION (lines 15-72)
+   1. User submits 6-digit OTP code
+   2. Validate OTP format (lines 18-19)
+   3. Call verifyOTP() function (line 20)
+      - Location: otp_functions.php, lines 76-154
+      - Query database for matching OTP (lines 86-88)
+      - Check expiration time (lines 94-101)
+      - Mark OTP as used (lines 104-107)
+      - Return success/failure result
+
+   4. If verification successful:
+      - Restore full session (lines 25-29)
+      - Clear OTP verification session variables (lines 32-37)
+      - Regenerate session ID for security (line 40)
+      - Redirect to appropriate dashboard (lines 43-62)
+
+   5. If verification fails:
+      - Display error message (line 65)
+
+C. RESEND OTP (lines 67-83)
+   1. User clicks "Resend OTP"
+   2. Generate new OTP code
+   3. Store in database
+   4. Send new email
+   5. Display success message
+
+D. CANCEL/BACK TO LOGIN (line 337)
+   - Link to index.php?cancel_otp=1
+   - Handled in index.php lines 13-22
+   - Clears all pending session variables
+
+STEP 5: SESSION COMPLETION
+--------------------------------------------------------------------------------
+File: verify_otp.php
+Lines: 25-62
+
+1. Session variables set:
+   - $_SESSION['user_id']
+   - $_SESSION['staff_id']
+   - $_SESSION['username']
+   - $_SESSION['role']
+
+2. Session regeneration (line 40)
+   - session_regenerate_id(true)
+
+3. Role-based redirect:
+   - admin → admin_dashboard.php
+   - chief-staff → chief_staff_dashboard.php
+   - doctor → doctor_dashboard.php
+   - therapist → therapist_dashboard.php
+   - nurse → nurse_dashboard.php
+   - receptionist → receptionist_dashboard.php
+
+================================================================================
+1.5 KEY FUNCTIONS & CODE LINES
+================================================================================
+
+FUNCTION: generateOTP()
+--------------------------------------------------------------------------------
+File: otp_functions.php
+Lines: 14-26
+Purpose: Generate cryptographically secure 6-digit OTP
+Returns: String (6 digits)
+
+Implementation:
+- Uses random_int(0, 9) for each digit
+- Fallback to mt_rand if random_int fails
+- Error logging for security
+
+Code:
+    function generateOTP() {
+        try {
+            $otp = '';
+            for ($i = 0; $i < 6; $i++) {
+                $otp .= random_int(0, 9);
+            }
+            return $otp;
+        } catch (Exception $e) {
+            error_log('OTP Generation Error: ' . $e->getMessage());
+            return str_pad(mt_rand(0, 999999), 6, '0', STR_PAD_LEFT);
+        }
+    }
+
+--------------------------------------------------------------------------------
+
+FUNCTION: storeOTP($user_id, $email, $otp, $expiry_minutes = 10)
+--------------------------------------------------------------------------------
+File: otp_functions.php
+Lines: 36-67
+Purpose: Store OTP in database with expiration time
+Parameters:
+  - $user_id: User ID
+  - $email: User email
+  - $otp: 6-digit OTP code
+  - $expiry_minutes: Validity period (default 10)
+Returns: Boolean (success/failure)
+
+Key Operations:
+Line 42-45: Delete existing unused OTPs for user
+Line 48: Calculate expiration time (current + 10 minutes)
+Line 50: Log OTP creation details
+Line 53-58: Insert new OTP record
+
+SQL Query:
+    DELETE FROM otp_codes WHERE user_id = ? AND is_used = 0
+    INSERT INTO otp_codes (user_id, email, otp_code, expires_at) 
+    VALUES (?, ?, ?, ?)
+
+--------------------------------------------------------------------------------
+
+FUNCTION: verifyOTP($email, $otp)
+--------------------------------------------------------------------------------
+File: otp_functions.php
+Lines: 76-154
+Purpose: Verify OTP code and check expiration
+Parameters:
+  - $email: User email
+  - $otp: OTP code to verify
+Returns: Array ['success' => bool, 'message' => string, 'user_id' => int|null]
+
+Key Operations:
+Line 84: Get current timestamp
+Line 86-88: Query for valid OTP (unused, matching email/code)
+Line 94-101: Check if OTP expired
+Line 104-107: Mark OTP as used if valid
+Line 113-139: Check for already-used or expired OTP
+
+SQL Queries:
+    SELECT id, user_id, expires_at FROM otp_codes 
+    WHERE email = ? AND otp_code = ? AND is_used = 0
+    
+    UPDATE otp_codes SET is_used = 1 WHERE id = ?
+
+Response Examples:
+    Success: ['success' => true, 'message' => 'OTP verified successfully', 
+              'user_id' => 5]
+    Expired: ['success' => false, 'message' => 'OTP has expired...', 
+              'user_id' => null]
+    Invalid: ['success' => false, 'message' => 'Invalid OTP code...', 
+              'user_id' => null]
+
+--------------------------------------------------------------------------------
+
+FUNCTION: sendOTPEmail($to_email, $to_name, $otp)
+--------------------------------------------------------------------------------
+File: otp_functions.php
+Lines: 318-574
+Purpose: Send OTP via email using SMTP
+Parameters:
+  - $to_email: Recipient email
+  - $to_name: Recipient name
+  - $otp: OTP code
+Returns: Boolean (success/failure)
+
+SMTP Configuration (from phpmailer_config.php):
+Line 14: SMTP_HOST = 'smtp.gmail.com'
+Line 15: SMTP_PORT = 587 (TLS)
+Line 16: SMTP_USERNAME = Gmail address
+Line 17: SMTP_PASSWORD = App password (16 characters)
+Line 20: SMTP_FROM_EMAIL = Sender email
+Line 21: SMTP_FROM_NAME = 'Mental Health Assylum System'
+
+Email Template:
+Lines 344-414: HTML email with:
+  - Purple gradient header
+  - Large OTP code display
+  - Security warnings
+  - 10-minute validity notice
+  - Instructions
+
+SMTP Process:
+Line 432-437: Connect to SMTP server (fsockopen)
+Line 455-457: Send EHLO command
+Line 460-462: Start TLS encryption
+Line 467-468: Enable TLS (stream_socket_enable_crypto)
+Line 476-478: Re-send EHLO after TLS
+Line 481-483: Authenticate (AUTH LOGIN)
+Line 486-494: Send username (base64)
+Line 497-505: Send password (base64)
+Line 508-515: MAIL FROM command
+Line 518-525: RCPT TO command
+Line 528-535: DATA command
+Line 538-539: Send email content
+Line 549-550: QUIT command
+
+Fallback:
+Line 332: Falls back to sendOTPEmailSimple() using PHP mail()
+
+--------------------------------------------------------------------------------
+
+FUNCTION: is2FAEnabled($user_id)
+--------------------------------------------------------------------------------
+File: otp_functions.php
+Lines: 579-596
+Purpose: Check if 2FA is enabled for a user
+Parameters: $user_id
+Returns: Boolean
+
+SQL Query:
+    SELECT two_factor_enabled FROM users WHERE id = ?
+
+--------------------------------------------------------------------------------
+
+FUNCTION: enable2FA($user_id)
+--------------------------------------------------------------------------------
+File: otp_functions.php
+Lines: 603-619
+Purpose: Enable 2FA for a user
+Parameters: $user_id
+Returns: Boolean
+
+Operations:
+Line 608: Generate random secret (32 characters hex)
+Line 610-612: Update user record
+
+SQL Query:
+    UPDATE users SET two_factor_enabled = 1, two_factor_secret = ? WHERE id = ?
+
+--------------------------------------------------------------------------------
+
+FUNCTION: disable2FA($user_id)
+--------------------------------------------------------------------------------
+File: otp_functions.php
+Lines: 626-637
+Purpose: Disable 2FA for a user
+Parameters: $user_id
+Returns: Boolean
+
+SQL Query:
+    UPDATE users SET two_factor_enabled = 0, two_factor_secret = NULL 
+    WHERE id = ?
+
+--------------------------------------------------------------------------------
+
+FUNCTION: cleanupExpiredOTPs()
+--------------------------------------------------------------------------------
+File: otp_functions.php
+Lines: 644-657
+Purpose: Delete expired and used OTPs (for periodic cleanup)
+Returns: Integer (number of records deleted)
+
+SQL Query:
+    DELETE FROM otp_codes WHERE expires_at < NOW() OR is_used = 1
+
+
+================================================================================
+SECTION 2: DATA AUDIT TRAIL SYSTEM
+================================================================================
+
+2.1 OVERVIEW
+--------------------------------------------------------------------------------
+The Audit Trail system provides comprehensive tracking of all data access and
+modifications within the system. It logs user activities, monitors bulk 
+operations, tracks sensitive data access, and maintains a complete history of
+all database changes.
+
+Key Features:
+- Data access logging (SELECT operations)
+- Data modification tracking (INSERT, UPDATE, DELETE)
+- Bulk operation detection and alerting
+- Sensitive data access monitoring
+- User session tracking
+- Field-level change history
+- Role-based permission validation
+- Approval workflow system
+
+================================================================================
+2.2 FILES INVOLVED
+================================================================================
+
+PRIMARY FILES:
+--------------
+1. admin_dashboard.php (2266 lines)
+   - Implements logDataModification() function
+   - Logs patient data access
+   - Bulk operation detection
+   - Lines 16-30: logDataModification function definition
+   - Lines 70-101: Audit logging for patient access
+
+2. audit_trail.php (367 lines)
+   - Audit trail dashboard/viewer
+   - Displays access logs, modifications, and alerts
+   - Location: Root directory
+
+3. simple_setup_aggregation_monitoring.php (355 lines)
+   - Database schema creation script
+   - Creates all 8 audit trail tables
+   - Inserts default permissions
+   - Location: Root directory
+
+4. security_manager.php (728 lines)
+   - Security validation framework
+   - Integrates with audit logging
+   - Session integrity validation
+
+SUPPORTING FILES:
+-----------------
+5. demo_modification_logging.php
+   - Testing/demonstration of modification logging
+
+6. test_audit_trail.php
+   - Audit trail system testing
+
+7. setup_dlp_classifications.php
+   - Data classification for audit purposes
+
+================================================================================
+2.3 DATABASE SCHEMA
+================================================================================
+
+The Audit Trail system uses 8 database tables:
+
+TABLE 1: data_access_logs
+--------------------------------------------------------------------------------
+File: simple_setup_aggregation_monitoring.php
+Lines: 56-74
+Purpose: Log all data access operations (SELECT queries)
+
+Schema:
+    CREATE TABLE data_access_logs (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        user_role VARCHAR(50) NOT NULL,
+        table_accessed VARCHAR(100) NOT NULL,
+        operation_type ENUM('SELECT','INSERT','UPDATE','DELETE','BULK_SELECT'),
+        query_summary TEXT,
+        records_affected INT DEFAULT 0,
+        ip_address VARCHAR(45),
+        user_agent TEXT,
+        session_id VARCHAR(255),
+        access_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        execution_time_ms DECIMAL(10,3) DEFAULT 0,
+        is_bulk_operation BOOLEAN DEFAULT FALSE,
+        is_sensitive_data BOOLEAN DEFAULT FALSE,
+        INDEX idx_user_timestamp (user_id, access_timestamp),
+        INDEX idx_table_operation (table_accessed, operation_type),
+        INDEX idx_bulk_operations (is_bulk_operation, access_timestamp),
+        INDEX idx_sensitive_access (is_sensitive_data, access_timestamp)
+    );
+
+Key Fields:
+- user_id: Who accessed the data
+- table_accessed: Which table was queried
+- records_affected: Number of rows accessed
+- is_bulk_operation: Flag for operations exceeding threshold
+- is_sensitive_data: Flag for sensitive tables (patients, medical_records)
+
+--------------------------------------------------------------------------------
+
+TABLE 2: data_modification_history
+--------------------------------------------------------------------------------
+File: simple_setup_aggregation_monitoring.php
+Lines: 79-95
+Purpose: Track all data modifications (INSERT, UPDATE, DELETE)
+
+Schema:
+    CREATE TABLE data_modification_history (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        table_name VARCHAR(100) NOT NULL,
+        record_id VARCHAR(50) NOT NULL,
+        operation_type ENUM('INSERT', 'UPDATE', 'DELETE') NOT NULL,
+        field_name VARCHAR(100),
+        old_value TEXT,
+        new_value TEXT,
+        change_reason VARCHAR(500),
+        modification_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        ip_address VARCHAR(45),
+        requires_approval BOOLEAN DEFAULT FALSE,
+        approval_status ENUM('pending', 'approved', 'rejected') DEFAULT NULL,
+        INDEX idx_table_record (table_name, record_id),
+        INDEX idx_user_timestamp (user_id, modification_timestamp),
+        INDEX idx_approval_status (approval_status, modification_timestamp)
+    );
+
+Key Fields:
+- table_name: Table modified
+- record_id: Specific record ID
+- field_name: Individual field changed
+- old_value: Value before change
+- new_value: Value after change
+- change_reason: Why the change was made
+
+--------------------------------------------------------------------------------
+
+TABLE 3: bulk_operation_alerts
+--------------------------------------------------------------------------------
+File: simple_setup_aggregation_monitoring.php
+Lines: 100-115
+Purpose: Alert on suspicious bulk operations
+
+Schema:
+    CREATE TABLE bulk_operation_alerts (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        operation_type VARCHAR(100) NOT NULL,
+        table_accessed VARCHAR(100) NOT NULL,
+        records_count INT NOT NULL,
+        threshold_exceeded VARCHAR(100),
+        alert_level ENUM('INFO', 'WARNING', 'CRITICAL') DEFAULT 'WARNING',
+        alert_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        is_investigated BOOLEAN DEFAULT FALSE,
+        investigation_notes TEXT,
+        INDEX idx_alert_level (alert_level, alert_timestamp),
+        INDEX idx_user_alerts (user_id, alert_timestamp)
+    );
+
+Thresholds:
+- INFO: < 50 records
+- WARNING: 50-100 records
+- CRITICAL: > 100 records
+
+--------------------------------------------------------------------------------
+
+TABLE 4: user_session_monitoring
+--------------------------------------------------------------------------------
+File: simple_setup_aggregation_monitoring.php
+Lines: 118-136
+Purpose: Track user sessions and activity metrics
+
+Schema:
+    CREATE TABLE user_session_monitoring (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        session_id VARCHAR(255) NOT NULL,
+        login_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        ip_address VARCHAR(45),
+        user_agent TEXT,
+        total_queries INT DEFAULT 0,
+        bulk_operations INT DEFAULT 0,
+        sensitive_access_count INT DEFAULT 0,
+        is_active BOOLEAN DEFAULT TRUE,
+        logout_timestamp TIMESTAMP NULL,
+        INDEX idx_session (session_id),
+        INDEX idx_user_active (user_id, is_active),
+        INDEX idx_activity_time (last_activity)
+    );
+
+--------------------------------------------------------------------------------
+
+TABLE 5: role_data_permissions
+--------------------------------------------------------------------------------
+File: simple_setup_aggregation_monitoring.php
+Lines: 139-157
+Purpose: Define role-based data access permissions
+
+Schema:
+    CREATE TABLE role_data_permissions (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        role_name VARCHAR(50) NOT NULL,
+        table_name VARCHAR(100) NOT NULL,
+        can_read BOOLEAN DEFAULT FALSE,
+        can_create BOOLEAN DEFAULT FALSE,
+        can_update BOOLEAN DEFAULT FALSE,
+        can_delete BOOLEAN DEFAULT FALSE,
+        can_bulk_export BOOLEAN DEFAULT FALSE,
+        max_records_per_query INT DEFAULT 100,
+        restricted_fields JSON,
+        conditions_required TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY unique_role_table (role_name, table_name)
+    );
+
+Default Permissions (Lines 265-280):
+- admin: Full access to all tables
+- doctor: Read patients, treatments, appointments
+- nurse: Read patients, update vitals
+- receptionist: Read/create appointments
+
+--------------------------------------------------------------------------------
+
+TABLE 6: approval_workflows
+--------------------------------------------------------------------------------
+File: simple_setup_aggregation_monitoring.php
+Lines: 160-172
+Purpose: Define approval workflow configurations
+
+Schema:
+    CREATE TABLE approval_workflows (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        workflow_name VARCHAR(100) NOT NULL,
+        description TEXT,
+        required_role ENUM('admin','chief-staff','doctor','therapist',
+                          'nurse','receptionist') NOT NULL,
+        approval_levels INT DEFAULT 1,
+        is_active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    );
+
+--------------------------------------------------------------------------------
+
+TABLE 7: approval_requests
+--------------------------------------------------------------------------------
+File: simple_setup_aggregation_monitoring.php
+Lines: 175-191
+Purpose: Track individual approval requests
+
+Schema:
+    CREATE TABLE approval_requests (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        workflow_id INT NOT NULL,
+        requester_id INT NOT NULL,
+        request_type VARCHAR(100) NOT NULL,
+        request_data JSON,
+        request_reason TEXT,
+        current_approval_level INT DEFAULT 1,
+        status ENUM('pending', 'approved', 'rejected', 'cancelled') 
+               DEFAULT 'pending',
+        requested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        expires_at TIMESTAMP NULL,
+        completed_at TIMESTAMP NULL,
+        INDEX idx_status_timestamp (status, requested_at),
+        INDEX idx_requester (requester_id, status)
+    );
+
+--------------------------------------------------------------------------------
+
+TABLE 8: approval_actions
+--------------------------------------------------------------------------------
+File: simple_setup_aggregation_monitoring.php
+Lines: 194-205
+Purpose: Log individual approval/rejection actions
+
+Schema:
+    CREATE TABLE approval_actions (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        request_id INT NOT NULL,
+        approver_id INT NOT NULL,
+        action ENUM('approved', 'rejected', 'request_info') NOT NULL,
+        approval_level INT NOT NULL,
+        comments TEXT,
+        action_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_request_level (request_id, approval_level)
+    );
+
+================================================================================
+2.4 AUDIT FLOW
+================================================================================
+
+FLOW 1: DATA ACCESS LOGGING
+--------------------------------------------------------------------------------
+Triggered: When user queries database (SELECT operations)
+File: admin_dashboard.php
+Lines: 70-101
+
+STEP 1: User accesses patient data
+   - Admin dashboard loads patient list
+   - Query: SELECT p.*, u.* FROM patients p JOIN users u...
+   - Line 59: Query executes
+
+STEP 2: Check if results exist
+   - Line 61: Check if patients_result has rows
+   - Line 66: Count records accessed
+
+STEP 3: Prepare audit log data
+   - Line 68: Get user_id from session
+   - Line 69: Get user_role from session
+   - Line 70: Get IP address from $_SERVER['REMOTE_ADDR']
+   - Line 71: Get user_agent from $_SERVER['HTTP_USER_AGENT']
+   - Line 72: Count records_count
+
+STEP 4: Insert access log
+   - Lines 75-78: Prepare INSERT statement
+   - SQL Query:
+     INSERT INTO data_access_logs 
+     (user_id, user_role, table_accessed, operation_type, records_affected, 
+      ip_address, user_agent, is_sensitive_data) 
+     VALUES (?, ?, 'patients', 'SELECT', ?, ?, ?, TRUE)
+
+STEP 5: Check bulk operation threshold
+   - Line 89: Define threshold (50 records)
+   - Line 90: Check if records_count >= threshold
+   - If yes, create bulk operation alert
+
+STEP 6: Create bulk alert (if threshold exceeded)
+   - Lines 92-98: Insert into bulk_operation_alerts
+   - SQL Query:
+     INSERT INTO bulk_operation_alerts 
+     (user_id, operation_type, table_accessed, records_count, 
+      threshold_exceeded, alert_level) 
+     VALUES (?, 'SELECT', 'patients', ?, ?, 'WARNING')
+
+Example Log Entry:
+    {
+        user_id: 1,
+        user_role: 'admin',
+        table_accessed: 'patients',
+        operation_type: 'SELECT',
+        records_affected: 5,
+        ip_address: '192.168.1.100',
+        is_sensitive_data: TRUE,
+        access_timestamp: '2025-10-21 14:30:22'
+    }
+
+--------------------------------------------------------------------------------
+
+FLOW 2: DATA MODIFICATION LOGGING
+--------------------------------------------------------------------------------
+Triggered: When user modifies database (INSERT, UPDATE, DELETE)
+File: admin_dashboard.php
+Function: logDataModification()
+Lines: 16-30
+
+FUNCTION SIGNATURE:
+    function logDataModification(
+        $conn,          // Database connection
+        $table_name,    // Table being modified
+        $record_id,     // ID of the record
+        $operation,     // 'INSERT', 'UPDATE', or 'DELETE'
+        $field_name,    // Field that changed (optional)
+        $old_value,     // Old value (NULL for INSERT)
+        $new_value,     // New value (NULL for DELETE)
+        $reason         // Why the change was made
+    )
+
+STEP 1: Gather context data
+   - Line 17: Get user_id from $_SESSION
+   - Line 18: Get ip_address from $_SERVER
+
+STEP 2: Prepare SQL statement
+   - Lines 20-22: Define INSERT query
+   - SQL:
+     INSERT INTO data_modification_history 
+     (user_id, table_name, record_id, operation_type, field_name, 
+      old_value, new_value, change_reason, ip_address) 
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+
+STEP 3: Execute insert
+   - Line 24: Prepare statement
+   - Line 26: Bind parameters (issssssss = 1 int, 8 strings)
+   - Line 27: Execute query
+   - Line 28: Close statement
+
+USAGE EXAMPLES:
+
+Example 1: UPDATE operation
+    // Before update, fetch old value
+    $old_name = $conn->query(
+        "SELECT name FROM staff WHERE id = 5"
+    )->fetch_assoc()['name'];
+    
+    // Perform update
+    $conn->query("UPDATE staff SET name = 'John Doe' WHERE id = 5");
+    
+    // Log the modification
+    logDataModification(
+        $conn, 
+        'staff',           // table
+        '5',               // record ID
+        'UPDATE',          // operation
+        'name',            // field changed
+        $old_name,         // old value
+        'John Doe',        // new value
+        'Name correction'  // reason
+    );
+
+Example 2: INSERT operation
+    // Perform insert
+    $conn->query("INSERT INTO staff (id, name) VALUES (10, 'Jane Smith')");
+    
+    // Log the modification
+    logDataModification(
+        $conn, 
+        'staff', 
+        '10',              // new record ID
+        'INSERT', 
+        'name', 
+        null,              // no old value for INSERT
+        'Jane Smith', 
+        'New staff member'
+    );
+
+Example 3: DELETE operation
+    // Before delete, fetch value being deleted
+    $old_name = $conn->query(
+        "SELECT name FROM staff WHERE id = 10"
+    )->fetch_assoc()['name'];
+    
+    // Perform delete
+    $conn->query("DELETE FROM staff WHERE id = 10");
+    
+    // Log the modification
+    logDataModification(
+        $conn, 
+        'staff', 
+        '10', 
+        'DELETE', 
+        'name', 
+        $old_name,         // old value
+        null,              // no new value for DELETE
+        'Staff terminated'
+    );
+
+--------------------------------------------------------------------------------
+
+FLOW 3: AUDIT TRAIL VIEWING
+--------------------------------------------------------------------------------
+File: audit_trail.php
+Lines: 1-367
+
+STEP 1: Access control check
+   - Line 16: Verify user is admin
+   - Line 17: Redirect if unauthorized
+
+STEP 2: Fetch audit data
+   
+   A. Data Access Logs (lines 28-34):
+      SELECT dal.*, u.username, u.first_name, u.last_name
+      FROM data_access_logs dal
+      LEFT JOIN users u ON dal.user_id = u.id
+      ORDER BY dal.access_timestamp DESC
+      LIMIT 100
+   
+   B. Modification History (lines 39-44):
+      SELECT dmh.*, u.username
+      FROM data_modification_history dmh
+      LEFT JOIN users u ON dmh.user_id = u.id
+      ORDER BY dmh.modification_timestamp DESC
+      LIMIT 50
+   
+   C. Bulk Alerts (lines 49-54):
+      SELECT boa.*, u.username
+      FROM bulk_operation_alerts boa
+      LEFT JOIN users u ON boa.user_id = u.id
+      ORDER BY boa.alert_timestamp DESC
+      LIMIT 20
+
+STEP 3: Check table existence
+   - Lines 58-66: Verify all required tables exist
+   - Tables checked: data_access_logs, data_modification_history, 
+                     bulk_operation_alerts
+
+STEP 4: Display in dashboard
+   - Lines 215-253: Access logs table
+   - Lines 255-280: Modifications table
+   - Lines 282-298: Bulk alerts
+
+DASHBOARD TABS:
+1. Data Access Logs (line 212)
+   - Shows: Time, User, Role, Table, Operation, Records, IP, Flags
+   - Badges: BULK, SENSITIVE
+
+2. Modifications (line 255)
+   - Shows: Time, User, Table, Record ID, Operation, Field, Old→New values
+   - Badges: INSERT (green), UPDATE (yellow), DELETE (red)
+
+3. Bulk Alerts (line 282)
+   - Shows: Alert level, operation details, timestamp
+   - Levels: INFO (blue), WARNING (yellow), CRITICAL (red)
+
+================================================================================
+2.5 KEY FUNCTIONS & CODE LINES
+================================================================================
+
+FUNCTION: logDataModification()
+--------------------------------------------------------------------------------
+File: admin_dashboard.php
+Lines: 16-30
+Purpose: Log INSERT, UPDATE, DELETE operations with field-level tracking
+Parameters:
+  - $conn: Database connection
+  - $table_name: Table being modified
+  - $record_id: Record ID
+  - $operation: 'INSERT', 'UPDATE', or 'DELETE'
+  - $field_name: Field changed (optional)
+  - $old_value: Value before change (NULL for INSERT)
+  - $new_value: Value after change (NULL for DELETE)
+  - $reason: Reason for change
+Returns: void
+
+Implementation:
+    function logDataModification($conn, $table_name, $record_id, $operation, 
+                                  $field_name = null, $old_value = null, 
+                                  $new_value = null, $reason = '') {
+        $user_id = $_SESSION['user_id'] ?? 0;
+        $ip_address = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+        
+        $sql = "INSERT INTO data_modification_history 
+                (user_id, table_name, record_id, operation_type, field_name, 
+                 old_value, new_value, change_reason, ip_address) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+        
+        $stmt = $conn->prepare($sql);
+        if ($stmt) {
+            $stmt->bind_param('issssssss', $user_id, $table_name, $record_id, 
+                              $operation, $field_name, $old_value, 
+                              $new_value, $reason, $ip_address);
+            $stmt->execute();
+            $stmt->close();
+        }
+    }
+
+Use Cases:
+1. Staff profile updates
+2. Patient record changes
+3. Appointment modifications
+4. Treatment plan updates
+5. Medical record edits
+
+--------------------------------------------------------------------------------
+
+DATA ACCESS LOGGING (In admin_dashboard.php)
+--------------------------------------------------------------------------------
+File: admin_dashboard.php
+Lines: 70-101
+Purpose: Log patient data access with bulk operation detection
+Trigger: When admin dashboard loads patient data
+
+Code:
+    if ($patients_result->num_rows > 0) {
+        $user_id = $_SESSION['user_id'] ?? 0;
+        $user_role = $_SESSION['role'] ?? 'unknown';
+        $ip_address = $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1';
+        $user_agent = $_SERVER['HTTP_USER_AGENT'] ?? '';
+        $records_count = $patients_result->num_rows;
+        
+        // Log the access
+        $audit_sql = "INSERT INTO data_access_logs 
+                     (user_id, user_role, table_accessed, operation_type, 
+                      records_affected, ip_address, user_agent, is_sensitive_data) 
+                     VALUES (?, ?, 'patients', 'SELECT', ?, ?, ?, TRUE)";
+        $audit_stmt = $conn->prepare($audit_sql);
+        if ($audit_stmt) {
+            $audit_stmt->bind_param('isiss', $user_id, $user_role, 
+                                    $records_count, $ip_address, $user_agent);
+            $audit_stmt->execute();
+            $audit_stmt->close();
+        }
+        
+        // Check for bulk operation
+        $bulk_threshold = 50;
+        if ($records_count >= $bulk_threshold) {
+            $alert_sql = "INSERT INTO bulk_operation_alerts 
+                         (user_id, operation_type, table_accessed, 
+                          records_count, threshold_exceeded, alert_level) 
+                         VALUES (?, 'SELECT', 'patients', ?, ?, 'WARNING')";
+            $alert_stmt = $conn->prepare($alert_sql);
+            if ($alert_stmt) {
+                $threshold_msg = "Accessed $records_count records " .
+                                "(threshold: $bulk_threshold)";
+                $alert_stmt->bind_param('iis', $user_id, $records_count, 
+                                        $threshold_msg);
+                $alert_stmt->execute();
+                $alert_stmt->close();
+            }
+        }
+    }
+
+Key Points:
+- Logs every SELECT query on sensitive tables
+- Marks patient data as sensitive (is_sensitive_data = TRUE)
+- Triggers alert if accessing ≥ 50 records
+- Captures IP, user agent for forensics
+
+--------------------------------------------------------------------------------
+
+SECURITY INTEGRATION
+--------------------------------------------------------------------------------
+File: security_manager.php
+Purpose: Provides security validation layer for audit trail
+
+Key Methods:
+
+1. secureSelect($sql, $params, $types)
+   Lines: 84-88
+   - Validates query safety
+   - Prevents SQL injection
+   - Returns mysqli_result
+
+2. secureExecute($sql, $params, $types)
+   Lines: 90-99
+   - Executes INSERT/UPDATE/DELETE securely
+   - Returns affected_rows and insert_id
+
+3. logSecurityEvent($event_type, $details)
+   Lines: 638-658
+   - Logs security-related events
+   - Writes to logs/security.log
+   - JSON format with timestamp, IP, user agent
+
+Event Types:
+- 'SUCCESSFUL_LOGIN'
+- 'FAILED_LOGIN'
+- 'SQL_INJECTION_ATTEMPT'
+- 'BLOCKED_QUERY'
+- 'CLIENT_BANNED'
+- 'LOGIN_VALIDATION_ERROR'
+
+Example:
+    $securityManager->logSecurityEvent('SUCCESSFUL_LOGIN', [
+        'user_id' => $_SESSION['user_id'],
+        'role' => 'admin'
+    ]);
+
+================================================================================
+COMPLETE SYSTEM INTEGRATION
+================================================================================
+
+AUTHENTICATION + AUDIT FLOW
+--------------------------------------------------------------------------------
+
+1. USER LOGIN ATTEMPT
+   ├─ index.php (lines 78-134)
+   ├─ Security validation via security_manager.php
+   ├─ SQL injection check
+   └─ Log event: 'LOGIN_ATTEMPT'
+
+2. CREDENTIAL VERIFICATION
+   ├─ index.php::processLogin() (lines 138-379)
+   ├─ Query users/staff tables
+   ├─ Password hash verification
+   └─ Log access to users table (data_access_logs)
+
+3. 2FA CHECK (if enabled)
+   ├─ otp_functions.php::generateOTP() (lines 14-26)
+   ├─ otp_functions.php::storeOTP() (lines 36-67)
+   │  └─ Log: INSERT into otp_codes (data_modification_history)
+   ├─ otp_functions.php::sendOTPEmail() (lines 318-574)
+   └─ Redirect to verify_otp.php
+
+4. OTP VERIFICATION
+   ├─ verify_otp.php (lines 15-72)
+   ├─ otp_functions.php::verifyOTP() (lines 76-154)
+   │  ├─ Log: SELECT from otp_codes (data_access_logs)
+   │  └─ Log: UPDATE otp_codes SET is_used=1 (data_modification_history)
+   ├─ Session establishment
+   └─ Log event: 'SUCCESSFUL_LOGIN'
+
+5. DASHBOARD ACCESS
+   ├─ admin_dashboard.php (or role-based dashboard)
+   ├─ Load patient data (lines 59-67)
+   ├─ Log data access (lines 70-88)
+   └─ Check bulk operation threshold (lines 89-101)
+
+6. DATA MODIFICATION
+   ├─ User updates patient record
+   ├─ Fetch old value
+   ├─ Execute UPDATE query
+   ├─ Call logDataModification() (lines 16-30)
+   └─ Insert into data_modification_history
+
+7. AUDIT REVIEW
+   ├─ Admin accesses audit_trail.php
+   ├─ Query all audit tables (lines 28-54)
+   ├─ Display logs in tabbed interface
+   └─ Log the audit trail access itself (data_access_logs)
+
+================================================================================
+CONFIGURATION FILES
+================================================================================
+
+1. SMTP CONFIGURATION
+--------------------------------------------------------------------------------
+File: phpmailer_config.php
+Lines: 1-53
+
+Configuration Constants:
+Line 14: SMTP_HOST = 'smtp.gmail.com'
+Line 15: SMTP_PORT = 587 (TLS) or 465 (SSL)
+Line 16: SMTP_USERNAME = Gmail address
+Line 17: SMTP_PASSWORD = App password (16 chars, no spaces)
+Line 20: SMTP_FROM_EMAIL = Sender email
+Line 21: SMTP_FROM_NAME = 'Mental Health Assylum System'
+
+Setup Instructions (Lines 24-42):
+1. Update SMTP_USERNAME with Gmail address
+2. Enable 2-Step Verification on Google account
+3. Generate App Password at: https://myaccount.google.com/apppasswords
+4. Copy 16-character password (remove spaces)
+5. Update SMTP_PASSWORD
+6. Test with test_smtp.php
+
+--------------------------------------------------------------------------------
+
+2. DATABASE CONFIGURATION
+--------------------------------------------------------------------------------
+File: db.php
+Purpose: Database connection setup
+Variables:
+- $servername
+- $username  
+- $password
+- $dbname
+- $conn (mysqli object)
+
+--------------------------------------------------------------------------------
+
+3. SESSION CONFIGURATION
+--------------------------------------------------------------------------------
+File: config.php
+Purpose: Multi-device session support
+Settings:
+- Session timeout
+- Cookie parameters
+- Session regeneration
+
+================================================================================
+TESTING & VERIFICATION
+================================================================================
+
+1. 2FA TESTING
+--------------------------------------------------------------------------------
+Files:
+- test_2fa.php: Full 2FA flow test
+- test_smtp.php: SMTP connectivity test
+- test_otp_email.php: OTP email delivery test
+
+Test Steps:
+1. Create test user with 2FA enabled
+2. Attempt login
+3. Verify OTP generation
+4. Check email delivery
+5. Submit OTP
+6. Verify session creation
+
+Expected Logs (check error_log):
+    [2FA] Creating OTP for user@example.com | Code: 123456 | Expires: ...
+    [2FA EMAIL] Attempting to send OTP to user@example.com
+    [2FA EMAIL] ✓ Authentication successful
+    [2FA EMAIL] ✅ Email sent successfully to user@example.com!
+
+--------------------------------------------------------------------------------
+
+2. AUDIT TRAIL TESTING
+--------------------------------------------------------------------------------
+Files:
+- test_audit_trail.php: Verify audit tables exist
+- demo_modification_logging.php: Test modification logging
+
+Test Steps:
+1. Run simple_setup_aggregation_monitoring.php to create tables
+2. Access admin dashboard
+3. View patient data (triggers access log)
+4. Modify a record (triggers modification log)
+5. View audit_trail.php
+6. Verify logs appear
+
+SQL Verification Queries:
+    -- Check access logs
+    SELECT * FROM data_access_logs ORDER BY access_timestamp DESC LIMIT 10;
+    
+    -- Check modifications
+    SELECT * FROM data_modification_history 
+    ORDER BY modification_timestamp DESC LIMIT 10;
+    
+    -- Check bulk alerts
+    SELECT * FROM bulk_operation_alerts 
+    ORDER BY alert_timestamp DESC LIMIT 10;
+
+================================================================================
+SECURITY BEST PRACTICES
+================================================================================
+
+2FA SYSTEM:
+-----------
+1. OTP Expiration: 10 minutes (line 48, otp_functions.php)
+2. OTP Reuse Prevention: Mark as used after verification (line 104)
+3. Old OTP Cleanup: Delete unused OTPs before creating new (line 42)
+4. Secure Random: Use random_int() for cryptographic security (line 19)
+5. Session Regeneration: New session ID after OTP verification (line 40, verify_otp.php)
+6. Password Hashing: Uses password_verify() (line 153, index.php)
+7. SMTP Security: TLS encryption on port 587 (line 467, otp_functions.php)
+
+AUDIT TRAIL:
+------------
+1. Immutable Logs: Never UPDATE/DELETE audit records
+2. Timestamp All: CURRENT_TIMESTAMP on all audit tables
+3. IP Logging: Capture $_SERVER['REMOTE_ADDR'] for all operations
+4. User Agent: Track browser/device for session forensics
+5. Sensitive Flag: Mark patient/medical data access
+6. Bulk Thresholds: Alert on > 50 records accessed
+7. Field-Level: Track individual field changes, not just row changes
+8. Change Reasons: Require justification for modifications
+
+INTEGRATION:
+------------
+1. SQL Injection Prevention: Use prepared statements always
+2. Input Validation: security_manager.php validateInput()
+3. XSS Prevention: escapeHTML() on all output
+4. CSRF Tokens: Implement for all state-changing operations
+5. Session Security: HTTP-only cookies, secure flag
+6. Failed Login Tracking: Ban after 10 attempts
+7. CAPTCHA: Required after 3 failed logins
+
+================================================================================
+TROUBLESHOOTING
+================================================================================
+
+2FA ISSUES:
+-----------
+Problem: OTP email not received
+Solution:
+1. Check phpmailer_config.php credentials (lines 16-17)
+2. Verify 2-Step Verification enabled on Google account
+3. Generate new App Password
+4. Check spam folder
+5. Review error_log for SMTP errors
+6. Test with test_smtp.php
+
+Problem: "OTP has expired"
+Solution:
+1. Check server time vs. database time
+2. Verify timezone settings in PHP and MySQL
+3. Increase expiry_minutes if needed (line 170, index.php)
+
+Problem: "Invalid OTP code"
+Solution:
+1. Check OTP was copied correctly (6 digits)
+2. Verify otp_codes table has matching entry
+3. Check if OTP already used (is_used = 1)
+4. Review error_log for verification details
+
+AUDIT TRAIL ISSUES:
+-------------------
+Problem: Audit tables missing
+Solution:
+1. Run simple_setup_aggregation_monitoring.php
+2. Check database permissions
+3. Verify MySQL version supports JSON fields
+4. Review setup output for errors
+
+Problem: No logs appearing
+Solution:
+1. Check if logDataModification() is called after operations
+2. Verify user_id in session
+3. Check database INSERT permissions
+4. Review PHP error log
+
+Problem: Bulk alerts not triggering
+Solution:
+1. Verify threshold value (line 89, admin_dashboard.php)
+2. Check records_count calculation
+3. Ensure bulk_operation_alerts table exists
+4. Review alert_level logic
+
+================================================================================
+FILE SUMMARY
+================================================================================
+
+2FA AUTHENTICATION FILES:
+------------------------
+1. otp_functions.php (643 lines)
+   - Core: generateOTP(), storeOTP(), verifyOTP()
+   - Email: sendOTPEmail(), sendOTPEmailSimple()
+   - Management: enable2FA(), disable2FA(), cleanupExpiredOTPs()
+
+2. index.php (816 lines)
+   - Login form and validation
+   - 2FA integration in processLogin()
+   - Session initialization
+
+3. verify_otp.php (479 lines)
+   - OTP input interface
+   - Verification handling
+   - Session completion
+
+4. phpmailer_config.php (53 lines)
+   - SMTP credentials
+   - Email configuration
+
+AUDIT TRAIL FILES:
+------------------
+1. admin_dashboard.php (2266 lines)
+   - logDataModification() function
+   - Data access logging
+   - Bulk operation detection
+
+2. audit_trail.php (367 lines)
+   - Audit dashboard interface
+   - Log viewing and filtering
+
+3. simple_setup_aggregation_monitoring.php (355 lines)
+   - Creates 8 audit tables
+   - Inserts default permissions
+
+4. security_manager.php (728 lines)
+   - Security validation framework
+   - SQL injection prevention
+   - Security event logging
+
+DATABASE TABLES:
+----------------
+2FA Tables:
+- otp_codes
+- users (two_factor_enabled field)
+- staff (two_factor_enabled field)
+
+Audit Trail Tables:
+- data_access_logs
+- data_modification_history
+- bulk_operation_alerts
+- user_session_monitoring
+- role_data_permissions
+- approval_workflows
+- approval_requests
+- approval_actions
+
+================================================================================
+END OF DOCUMENTATION
+================================================================================
+
+For support or questions:
+- Review documentation files in root directory
+- Check error logs: logs/security.log
+- Test with provided test files
+- Consult SECURITY_IMPLEMENTATION.md for additional details
+
+Last Updated: 2025-10-21
+Version: 1.0
